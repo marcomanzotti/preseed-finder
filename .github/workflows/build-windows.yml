@@ -17,6 +17,13 @@ name: Build Windows app
 #
 # Lo zip e' pubblicato come artifact (scaricabile dalla pagina Actions) e,
 # sui tag v*, allegato a una Release.
+#
+# IMPORTANTE per chi scarica da Actions (non da una Release): GitHub
+# re-zippa ogni artifact, quindi si ottiene uno zip-dentro-zip. Istruzioni
+# per i colleghi: estrarre ENTRAMBI gli zip annidati, poi nella cartella
+# finale fare doppio click su "Start Preseed Finder.bat" (non sull'exe
+# dentro la sottocartella "Preseed Finder/", che resta li' per supporto).
+# Scaricare da una Release (tag v*) evita il doppio zip.
 
 on:
   push:
@@ -61,8 +68,21 @@ jobs:
           --hidden-import sources.rockstart
           app.py
 
+      - name: Add a top-level shortcut to the exe
+        # GitHub re-zippa automaticamente ogni artifact scaricato dalla tab
+        # Actions, quindi un collega che scarica l'artifact si ritrova con
+        # uno zip-dentro-zip e l'exe sepolto in "Preseed Finder/Preseed
+        # Finder.exe". Questo .bat in cima alla cartella e' un collegamento
+        # ovvio: "estrai, doppio click su questo file", senza dover sapere
+        # dov'e' l'exe vero.
+        run: |
+          $lines = '@echo off', 'start "" "%~dp0Preseed Finder\Preseed Finder.exe"'
+          Set-Content -Path "dist/Start Preseed Finder.bat" -Value $lines
+        shell: pwsh
+
       - name: Zip the app folder
-        run: Compress-Archive -Path "dist/Preseed Finder/*" -DestinationPath "PreseedFinder-Windows.zip"
+        run: |
+          Compress-Archive -Path "dist/Preseed Finder", "dist/Start Preseed Finder.bat" -DestinationPath "PreseedFinder-Windows.zip"
         shell: pwsh
 
       - name: Upload artifact

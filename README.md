@@ -4,9 +4,26 @@ Script Python che raccoglie startup early-stage/pre-seed da fonti pubbliche legi
 
 ## App cliccabile
 
-- **Windows**: build automatica via GitHub Actions (`.github/workflows/build-windows.yml`) → `Preseed Finder.exe` con icona, doppio click → finestra nativa, nessun terminale. L'exe è pubblicato come artifact (e allegato alle Release sui tag `v*`).
-- **Mac** (per i test): `./build_mac_app.sh` genera `Preseed Finder.app` con icona; doppio click in Finder lo avvia.
-- Entrambi usano `app.py` (avvia Flask + finestra pywebview). Al primo avvio scaricano Chromium per Playwright (~150 MB, una sola volta); `.env` e `preseed.db` vivono accanto all'eseguibile.
+- **Windows (per i colleghi)**: build automatica via GitHub Actions (`.github/workflows/build-windows.yml`), pensata per **Gemini** (vedi sotto). Output: uno zip con dentro la cartella `Preseed Finder/` (l'app vera e propria) e un file `Start Preseed Finder.bat`.
+
+  **Per i colleghi — come scaricarla e avviarla:**
+  1. Vai su [Actions](https://github.com/marcomanzotti/preseed-finder/actions), apri l'ultima run completata (✅ verde) del workflow "Build Windows app", scarica l'artifact `PreseedFinder-Windows` in fondo alla pagina.
+  2. **Attenzione**: GitHub mette ogni artifact in uno zip aggiuntivo, quindi il file scaricato (`PreseedFinder-Windows.zip`) va estratto, e dentro c'è un altro `PreseedFinder-Windows.zip` da estrarre di nuovo. *(Per evitare il doppio zip, in futuro si può scaricare da una Release taggata invece che dalla tab Actions.)*
+  3. Nella cartella finale, fai doppio click su **`Start Preseed Finder.bat`** (non sull'exe dentro la sottocartella `Preseed Finder/`, che resta lì come supporto). Si apre la finestra dell'app.
+  4. Al primo avvio la dashboard chiede una API key (Gemini, gratuita su [ai.google.dev](https://ai.google.dev/)): si incolla direttamente nella finestra, viene salvata in un file `.env` locale dentro la cartella `Preseed Finder/` — resta solo su quel PC.
+
+- **Mac (per i test dell'utente)**: `./build_mac_app.sh` genera `Preseed Finder.app` con icona (richiede `pyinstaller`, installato automaticamente nella venv dallo script); doppio click in Finder lo avvia. Pensata per **Claude** (vedi sotto).
+
+- Entrambe le build usano `app.py` (avvia Flask + finestra nativa pywebview), impacchettato con **PyInstaller** (non un bundle fatto a mano: un `.app`/`.exe` "fai-da-te" con solo uno script di lancio non parte in modo affidabile quando lanciato con un doppio click, perché l'ambiente del launcher di sistema non ha un terminale né il `PATH` di una shell). Al primo avvio scaricano Chromium per Playwright (~150 MB, una sola volta); `.env`, `preseed.db` e il file di log `preseed_finder.log` vivono accanto all'eseguibile.
+
+### Provider LLM: Claude su Mac, Gemini su Windows
+
+Le due build sono pensate per provider diversi, scelti automaticamente in base a quale chiave è presente nel `.env` (vedi `config.py`, nessuna scelta manuale richiesta):
+
+- **Mac (uso personale)** → Claude Haiku, con `ANTHROPIC_API_KEY`.
+- **Windows (colleghi)** → Gemini Flash Lite, con `GEMINI_API_KEY` — più economico per un uso frequente da più persone.
+
+Se il `.env` ha solo una delle due chiavi, quella viene usata in automatico. Se manca del tutto, la dashboard mostra un banner con un campo per incollarla al volo (salvata localmente, mai committata). **Se una run finisce con tutte le email vuote**, controllare nel log della run (sezione "Advanced" della dashboard, o `preseed_finder.log`) la riga `[llm] provider configurato: ...` — se manca del tutto o dice `ATTENZIONE ... SALTATO`, l'enrichment non è partito per mancanza di chiave.
 
 ## Fonti usate
 
