@@ -129,10 +129,11 @@ def _enrich_one_gemini(client, record):
 def enrich_with_llm(records):
     """Arricchisce i record con stage/settore/email/founder via LLM (provider in config)."""
     provider = config.LLM_PROVIDER
+    print(f"[llm] provider configurato: {provider}")
 
     if provider == "gemini":
         if not config.GEMINI_API_KEY:
-            print("[llm] GEMINI_API_KEY non configurato, enrichment LLM saltato.")
+            print("[llm] ATTENZIONE: GEMINI_API_KEY non configurato in .env, enrichment LLM SALTATO (nessuna email/stage verra' arricchito).")
             return records
         try:
             import google.genai as genai
@@ -141,25 +142,27 @@ def enrich_with_llm(records):
                 # fallback al SDK deprecato se il nuovo non è disponibile
                 import google.generativeai as genai
             except ImportError:
-                print("[llm] pacchetto 'google-genai' o 'google-generativeai' non installato, enrichment saltato.")
+                print("[llm] ATTENZIONE: pacchetto 'google-genai' non installato, enrichment LLM SALTATO.")
                 return records
         genai.configure(api_key=config.GEMINI_API_KEY)
         client = genai.GenerativeModel(config.GEMINI_MODEL)
         enrich_fn = _enrich_one_gemini
-    else:  # default: anthropic
+        model_name = config.GEMINI_MODEL
+    else:  # anthropic
         if not config.ANTHROPIC_API_KEY:
-            print("[llm] ANTHROPIC_API_KEY non configurato, enrichment LLM saltato.")
+            print("[llm] ATTENZIONE: ANTHROPIC_API_KEY non configurato in .env, enrichment LLM SALTATO (nessuna email/stage verra' arricchito).")
             return records
         try:
             import anthropic
         except ImportError:
-            print("[llm] pacchetto 'anthropic' non installato (pip install anthropic), enrichment saltato.")
+            print("[llm] ATTENZIONE: pacchetto 'anthropic' non installato, enrichment LLM SALTATO.")
             return records
         client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
         enrich_fn = _enrich_one_anthropic
+        model_name = config.LLM_MODEL
 
     targets = [r for r in records if r.get("company_name")]
-    print(f"[llm] arricchisco {len(targets)} startup (provider {provider}, modello varia)...")
+    print(f"[llm] arricchisco {len(targets)} startup (provider={provider}, modello={model_name})...")
 
     for i, record in enumerate(targets, 1):
         data = enrich_fn(client, record)

@@ -19,11 +19,13 @@ from flask import Flask, request, jsonify, send_file, Response
 
 import main as pipeline
 import store
+import config
 
 app = Flask(__name__)
 
 DB_PATH = store.DEFAULT_DB_PATH
 _existing_csv = Path(__file__).parent / "startups.csv"
+_env_path = Path(__file__).parent / ".env"
 
 # Template precompilato per il mailto (in inglese).
 MAIL_SUBJECT = "Reaching out from [Your Company]"
@@ -90,6 +92,60 @@ def _run_pipeline(sources, limit, enrich_llm, batches):
 @app.route("/")
 def index():
     return Response(INDEX_HTML, mimetype="text/html")
+
+
+@app.route("/api/setup-status")
+def setup_status():
+    """Indica se manca una chiave LLM, cosi' la dashboard puo' mostrare un
+    banner di setup al primo avvio (un collega non tecnico non deve aprire
+    ne' modificare il file .env a mano)."""
+    has_key = bool(config.GEMINI_API_KEY or config.ANTHROPIC_API_KEY)
+    return jsonify({
+        "needs_setup": not has_key,
+        "provider": config.LLM_PROVIDER,
+    })
+
+
+@app.route("/api/setup-key", methods=["POST"])
+def setup_key():
+    """Salva la chiave API inserita dall'utente nel file .env locale, cosi'
+    resta solo sulla sua macchina (come da requisito: ognuno inserisce la
+    propria chiave la prima volta che lancia l'app)."""
+    data = request.get_json(force=True) or {}
+    provider = (data.get("provider") or "").strip().lower()
+    api_key = (data.get("api_key") or "").strip()
+    if provider not in ("gemini", "anthropic") or not api_key:
+        return jsonify({"ok": False, "error": "Invalid provider or empty key."}), 400
+
+    var_name = "GEMINI_API_KEY" if provider == "gemini" else "ANTHROPIC_API_KEY"
+
+    lines = []
+    if _env_path.exists():
+        lines = _env_path.read_text().splitlines()
+    found = False
+    for i, line in enumerate(lines):
+        if line.strip().startswith(f"{var_name}="):
+            lines[i] = f"{var_name}={api_key}"
+            found = True
+            break
+    if not found:
+        lines.append(f"{var_name}={api_key}")
+    _env_path.write_text("\n".join(lines) + "\n")
+
+    # Aggiorna anche il processo corrente, cosi' la run successiva la usa
+    # subito senza dover riavviare l'app.
+    import os
+    os.environ[var_name] = api_key
+    config.GEMINI_API_KEY = config.GEMINI_API_KEY or (api_key if provider == "gemini" else config.GEMINI_API_KEY)
+    config.ANTHROPIC_API_KEY = config.ANTHROPIC_API_KEY or (api_key if provider == "anthropic" else config.ANTHROPIC_API_KEY)
+    if provider == "gemini":
+        config.GEMINI_API_KEY = api_key
+    else:
+        config.ANTHROPIC_API_KEY = api_key
+    if not os.environ.get("LLM_PROVIDER"):
+        config.LLM_PROVIDER = provider
+
+    return jsonify({"ok": True})
 
 
 @app.route("/api/startups")
@@ -218,9 +274,41 @@ INDEX_HTML = """<!DOCTYPE html>
   @keyframes spin { to{ transform:rotate(360deg) } }
   pre#log { background:#0b0f17; color:#cbd5e1; padding:12px; border-radius:8px; max-height:240px; overflow:auto; font-size:.76rem; white-space:pre-wrap; margin-top:10px; }
   .empty { text-align:center; padding:40px; color:var(--muted); }
+  .modal-overlay { position:fixed; inset:0; background:rgba(15,20,30,.55); display:none; align-items:center; justify-content:center; z-index:100; }
+  .modal-overlay.show { display:flex; }
+  .modal { background:#fff; border-radius:14px; padding:28px; max-width:440px; width:92%; box-shadow:0 20px 60px rgba(0,0,0,.25); }
+  .modal h2 { margin:0 0 8px; font-size:1.15rem; }
+  .modal p { color:var(--muted); font-size:.88rem; line-height:1.5; margin:0 0 16px; }
+  .modal label { font-size:.82rem; color:var(--muted); display:block; margin:12px 0 4px; }
+  .modal select, .modal input[type=text], .modal input[type=password] { width:100%; padding:9px; border:1px solid var(--line); border-radius:8px; font-size:.9rem; }
+  .modal .modal-actions { margin-top:18px; display:flex; gap:8px; justify-content:flex-end; }
+  .modal a { color:var(--accent); }
+  .modal .err { color:#b91c1c; font-size:.8rem; margin-top:8px; display:none; }
+  .setup-banner { background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; border-radius:10px; padding:10px 16px; margin-bottom:14px; font-size:.85rem; display:none; cursor:pointer; }
+  .setup-banner.show { display:block; }
 </style>
 </head>
 <body>
+
+<div class="modal-overlay" id="setupModal">
+  <div class="modal">
+    <h2>Welcome to Preseed Finder</h2>
+    <p>To find startups and their contact emails, the app uses an AI model to read each company's website. Paste an API key below (it's saved only on this computer, in a local .env file — never shared).</p>
+    <label>Provider</label>
+    <select id="setupProvider">
+      <option value="gemini">Gemini (Google) &mdash; recommended, free tier available</option>
+      <option value="anthropic">Claude (Anthropic)</option>
+    </select>
+    <label>API key</label>
+    <input type="password" id="setupKey" placeholder="Paste your API key here">
+    <div class="err" id="setupErr">Please select a provider and paste a valid key.</div>
+    <div class="modal-actions">
+      <button class="ghost" onclick="skipSetup()">Skip for now</button>
+      <button class="primary" onclick="saveSetupKey()">Save key</button>
+    </div>
+  </div>
+</div>
+
 <header>
   <div>
     <h1>Preseed Finder</h1>
@@ -230,6 +318,7 @@ INDEX_HTML = """<!DOCTYPE html>
 </header>
 
 <main>
+  <div class="setup-banner" id="setupBanner" onclick="openSetup()">No API key configured yet &mdash; LLM enrichment (email/founder lookup) is disabled. Click here to add one.</div>
   <div class="banner" id="banner"></div>
 
   <div class="progress-container" id="progContainer">
@@ -281,7 +370,7 @@ INDEX_HTML = """<!DOCTYPE html>
         <input type="text" id="batches" placeholder="e.g. Summer 2025,Winter 2025">
       </div>
       <div>
-        <label><input type="checkbox" id="enrich_llm" checked> LLM enrichment (stage/sector/email/founder via Claude)</label>
+        <label><input type="checkbox" id="enrich_llm" checked> LLM enrichment (stage/sector/email/founder &mdash; requires an API key in .env, see setup)</label>
       </div>
     </div>
     <a class="ghost" href="/download" style="display:inline-block;text-decoration:none;margin-bottom:12px;">Download CSV export</a>
@@ -435,6 +524,36 @@ async function poll(){
   }
 }
 
+function openSetup(){
+  document.getElementById('setupModal').classList.add('show');
+}
+function skipSetup(){
+  document.getElementById('setupModal').classList.remove('show');
+}
+async function saveSetupKey(){
+  const provider = document.getElementById('setupProvider').value;
+  const key = document.getElementById('setupKey').value.trim();
+  const err = document.getElementById('setupErr');
+  if(!key){ err.style.display = 'block'; return; }
+  err.style.display = 'none';
+  const r = await fetch('/api/setup-key', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({provider, api_key: key})
+  });
+  if(!r.ok){ err.textContent = 'Could not save the key, please try again.'; err.style.display='block'; return; }
+  document.getElementById('setupModal').classList.remove('show');
+  document.getElementById('setupBanner').classList.remove('show');
+}
+async function checkSetup(){
+  const r = await fetch('/api/setup-status');
+  const d = await r.json();
+  if(d.needs_setup){
+    document.getElementById('setupModal').classList.add('show');
+    document.getElementById('setupBanner').classList.add('show');
+  }
+}
+
+checkSetup();
 load();
 </script>
 </body>

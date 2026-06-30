@@ -17,7 +17,7 @@ def main():
     parser.add_argument("--sources", default="yc,producthunt,antler,cordis", help="Fonti da usare, separate da virgola (default: yc,producthunt,antler,cordis). Disponibili anche: rockstart.")
     parser.add_argument("--db", default=store.DEFAULT_DB_PATH, help="Percorso DB SQLite che accumula le startup tra run (default: preseed.db). Vuoto/'none' per saltare.")
     parser.add_argument("--batches", default=None, help="Batch YC da usare, separati da virgola (es. 'Summer 2025,Winter 2025'). Default: gli ultimi 3.")
-    parser.add_argument("--enrich-llm", action="store_true", help="Usa un LLM Anthropic per stimare lo stage reale e classificare il settore leggendo il sito (richiede ANTHROPIC_API_KEY).")
+    parser.add_argument("--enrich-llm", action="store_true", help="Usa un LLM (Claude o Gemini, vedi LLM_PROVIDER in .env) per stimare lo stage reale, il settore e trovare email/founder leggendo il sito (richiede ANTHROPIC_API_KEY o GEMINI_API_KEY).")
     args = parser.parse_args()
 
     enabled_sources = [s.strip() for s in args.sources.split(",") if s.strip()]

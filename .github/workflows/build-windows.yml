@@ -1,8 +1,21 @@
 name: Build Windows app
 
-# Costruisce l'eseguibile cliccabile "Preseed Finder.exe" su un runner Windows.
+# Costruisce l'app cliccabile "Preseed Finder.exe" su un runner Windows.
 # PyInstaller non puo' cross-compilare da macOS, quindi il build gira qui.
-# L'exe viene pubblicato come artifact (scaricabile dalla pagina Actions) e,
+#
+# Usa --onedir (non --onefile): con --onefile + --windowed l'eseguibile si
+# scompatta in una cartella temp ad ogni avvio, il che e' piu' lento e piu'
+# fragile quando l'app stessa scrive file accanto a se' (.env, preseed.db,
+# il file di log). --onedir produce una cartella stabile con l'exe dentro,
+# zippata per la distribuzione: il collega estrae lo zip e lancia l'exe
+# dentro, che resta sempre nella stessa posizione.
+#
+# Il colega Mac usa Claude (ANTHROPIC_API_KEY); questa build Windows e'
+# pensata per i colleghi e usa Gemini come provider di default (vedi
+# .env.example e l'auto-detect del provider in config.py) perche' piu'
+# economico per un uso frequente da piu' persone.
+#
+# Lo zip e' pubblicato come artifact (scaricabile dalla pagina Actions) e,
 # sui tag v*, allegato a una Release.
 
 on:
@@ -29,20 +42,37 @@ jobs:
 
       - name: Build executable
         run: >
-          pyinstaller --noconfirm --clean --windowed --onefile
+          pyinstaller --noconfirm --clean --windowed --onedir
           --name "Preseed Finder"
           --icon assets/app.ico
           --add-data ".env.example;."
+          --hidden-import webapp
+          --hidden-import main
+          --hidden-import store
+          --hidden-import dedupe
+          --hidden-import config
+          --hidden-import enrich
+          --hidden-import llm_enrich
+          --hidden-import sources
+          --hidden-import sources.yc
+          --hidden-import sources.antler
+          --hidden-import sources.cordis
+          --hidden-import sources.producthunt
+          --hidden-import sources.rockstart
           app.py
+
+      - name: Zip the app folder
+        run: Compress-Archive -Path "dist/Preseed Finder/*" -DestinationPath "PreseedFinder-Windows.zip"
+        shell: pwsh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: PreseedFinder-Windows
-          path: dist/Preseed Finder.exe
+          path: PreseedFinder-Windows.zip
 
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Preseed Finder.exe
+          files: PreseedFinder-Windows.zip

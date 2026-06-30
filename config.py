@@ -25,15 +25,29 @@ PRODUCTHUNT_TOKEN = os.environ.get("PRODUCTHUNT_TOKEN", "").strip()
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
-# Provider LLM: "anthropic" (Claude, default) o "gemini" (Google Gemini, più economico).
-LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "gemini").strip().lower()
+# Provider LLM: "anthropic" (Claude) o "gemini" (Google, più economico).
+# Se LLM_PROVIDER non e' impostato esplicitamente, lo si deduce da quale
+# chiave e' presente nel .env, cosi' un .env con solo ANTHROPIC_API_KEY usa
+# Claude e uno con solo GEMINI_API_KEY usa Gemini, senza bisogno di settare
+# anche LLM_PROVIDER a mano (causa di un bug: con provider di default fisso
+# a "gemini", un .env con solo ANTHROPIC_API_KEY restava silenziosamente
+# senza enrichment perche' cercava la chiave Gemini mancante).
+_explicit_provider = os.environ.get("LLM_PROVIDER", "").strip().lower()
+if _explicit_provider:
+    LLM_PROVIDER = _explicit_provider
+elif GEMINI_API_KEY and not ANTHROPIC_API_KEY:
+    LLM_PROVIDER = "gemini"
+elif ANTHROPIC_API_KEY and not GEMINI_API_KEY:
+    LLM_PROVIDER = "anthropic"
+else:
+    LLM_PROVIDER = "gemini"  # default se entrambe o nessuna chiave e' presente
 
 # Modello per l'enrichment LLM (se provider="anthropic").
 # Haiku 4.5: veloce ed economico, adatto a task di estrazione/classificazione ad alto volume.
 LLM_MODEL = os.environ.get("LLM_MODEL", "claude-haiku-4-5").strip()
 
-# Modello Gemini (se provider="gemini"). Gemini 2.0 Flash è il più economico.
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash").strip()
+# Modello Gemini (se provider="gemini"). Flash Lite e' il piu' economico.
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-lite").strip()
 
 REQUEST_TIMEOUT = 15
 USER_AGENT = "Mozilla/5.0 (compatible; PreseedFinder/1.0)"
