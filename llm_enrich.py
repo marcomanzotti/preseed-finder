@@ -1,22 +1,20 @@
-"""Enrichment opzionale via LLM Anthropic.
+"""Enrichment opzionale via LLM (Claude Anthropic o Gemini Google).
 
-Per ogni startup con un sito, chiede a Claude (Haiku) di leggere il sito tramite
-il tool server-side web_fetch e stimare:
-  - stage reale (pre-seed / seed / series A+ / unknown)
-  - settore normalizzato
-  - email di contatto pubblica, se presente sul sito
+Per ogni startup con un sito, usa il provider configurato (LLM_PROVIDER in config)
+per leggere il sito e stimare stage, settore, email, founder. Il provider predefinito
+è Gemini (più economico); alterna a Claude con LLM_PROVIDER=anthropic in .env.
 
-Richiede ANTHROPIC_API_KEY. Se manca, l'enrichment viene saltato.
+Richiede GEMINI_API_KEY (default) o ANTHROPIC_API_KEY. Se manca, l'enrichment viene saltato.
 """
 
 import json
-
 import config
+
 
 PROMPT_TEMPLATE = """Sei un analista che valuta startup early-stage.
 
 Ti do nome, paese ed eventuale sito di una startup. {website_instruction} \
-Usa il tool web_fetch per leggere il sito ufficiale (home + eventuale pagina \
+Usa il tool web_search/grounding per leggere il sito ufficiale (home + eventuale pagina \
 about/contact/team) e poi rispondi SOLO con un oggetto JSON con questi campi:
 - "website": l'URL del sito ufficiale della startup (quello fornito, oppure \
 quello trovato tramite ricerca se non fornito), oppure null se non trovato
@@ -52,16 +50,8 @@ OUTPUT_SCHEMA = {
 }
 
 
-def _build_client():
-    try:
-        import anthropic
-    except ImportError:
-        print("[llm] pacchetto 'anthropic' non installato (pip install anthropic), enrichment saltato.")
-        return None
-    return anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-
-
-def _enrich_one(client, record):
+def _enrich_one_anthropic(client, record):
+    """Usa Claude Anthropic via Anthropic SDK."""
     has_website = bool(record.get("website"))
     website_instruction = (
         "Il sito e' gia' fornito."
@@ -83,7 +73,7 @@ def _enrich_one(client, record):
             messages=[{"role": "user", "content": prompt}],
         )
     except Exception as e:
-        print(f"[llm]   errore su {record.get('company_name')}: {e}")
+        print(f"[llm]   errore Anthropic su {record.get('company_name')}: {e}")
         return None
 
     if response.stop_reason == "refusal":
@@ -99,20 +89,80 @@ def _enrich_one(client, record):
         return None
 
 
-def enrich_with_llm(records):
-    if not config.ANTHROPIC_API_KEY:
-        print("[llm] ANTHROPIC_API_KEY non configurato, enrichment LLM saltato.")
-        return records
+def _enrich_one_gemini(client, record):
+    """Usa Gemini Google via google-genai SDK."""
+    has_website = bool(record.get("website"))
+    website_instruction = (
+        "Il sito e' gia' fornito."
+        if has_website
+        else "Il sito NON e' fornito: cerca tu il sito ufficiale piu' probabile in base a nome e paese, poi usalo."
+    )
+    prompt = PROMPT_TEMPLATE.format(
+        company_name=record.get("company_name", ""),
+        country=record.get("country", "") or "sconosciuto",
+        website=record.get("website", "") or "(da cercare)",
+        website_instruction=website_instruction,
+    )
+    try:
+        response = client.generate_content(
+            prompt,
+            generation_config={
+                "temperature": 0.1,
+                "max_output_tokens": 1024,
+                "response_mime_type": "application/json",
+                "response_schema": OUTPUT_SCHEMA,
+            },
+            tools=None,  # Gemini's grounding è implicito nel generate_content
+        )
+    except Exception as e:
+        print(f"[llm]   errore Gemini su {record.get('company_name')}: {e}")
+        return None
 
-    client = _build_client()
-    if client is None:
-        return records
+    if not response.text:
+        return None
+    try:
+        return json.loads(response.text)
+    except json.JSONDecodeError:
+        return None
+
+
+def enrich_with_llm(records):
+    """Arricchisce i record con stage/settore/email/founder via LLM (provider in config)."""
+    provider = config.LLM_PROVIDER
+
+    if provider == "gemini":
+        if not config.GEMINI_API_KEY:
+            print("[llm] GEMINI_API_KEY non configurato, enrichment LLM saltato.")
+            return records
+        try:
+            import google.genai as genai
+        except ImportError:
+            try:
+                # fallback al SDK deprecato se il nuovo non è disponibile
+                import google.generativeai as genai
+            except ImportError:
+                print("[llm] pacchetto 'google-genai' o 'google-generativeai' non installato, enrichment saltato.")
+                return records
+        genai.configure(api_key=config.GEMINI_API_KEY)
+        client = genai.GenerativeModel(config.GEMINI_MODEL)
+        enrich_fn = _enrich_one_gemini
+    else:  # default: anthropic
+        if not config.ANTHROPIC_API_KEY:
+            print("[llm] ANTHROPIC_API_KEY non configurato, enrichment LLM saltato.")
+            return records
+        try:
+            import anthropic
+        except ImportError:
+            print("[llm] pacchetto 'anthropic' non installato (pip install anthropic), enrichment saltato.")
+            return records
+        client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+        enrich_fn = _enrich_one_anthropic
 
     targets = [r for r in records if r.get("company_name")]
-    print(f"[llm] arricchisco {len(targets)} startup (modello {config.LLM_MODEL})...")
+    print(f"[llm] arricchisco {len(targets)} startup (provider {provider}, modello varia)...")
 
     for i, record in enumerate(targets, 1):
-        data = _enrich_one(client, record)
+        data = enrich_fn(client, record)
         if data:
             if not record.get("website") and data.get("website"):
                 record["website"] = data["website"]
