@@ -4,13 +4,12 @@ Script Python che raccoglie startup early-stage/pre-seed da fonti pubbliche legi
 
 ## App cliccabile
 
-- **Windows (per i colleghi)**: build automatica via GitHub Actions (`.github/workflows/build-windows.yml`), pensata per **Gemini** (vedi sotto). Output: uno zip con dentro la cartella `Preseed Finder/` (l'app vera e propria) e un file `Start Preseed Finder.bat`.
+- **Windows (per i colleghi)**: build automatica via GitHub Actions (`.github/workflows/build-windows.yml`), pensata per **Gemini** (vedi sotto). Output: un **singolo file** `Preseed Finder.exe`.
 
   **Per i colleghi — come scaricarla e avviarla:**
-  1. Vai su [Actions](https://github.com/marcomanzotti/preseed-finder/actions), apri l'ultima run completata (✅ verde) del workflow "Build Windows app", scarica l'artifact `PreseedFinder-Windows` in fondo alla pagina.
-  2. **Attenzione**: GitHub mette ogni artifact in uno zip aggiuntivo, quindi il file scaricato (`PreseedFinder-Windows.zip`) va estratto, e dentro c'è un altro `PreseedFinder-Windows.zip` da estrarre di nuovo. *(Per evitare il doppio zip, in futuro si può scaricare da una Release taggata invece che dalla tab Actions.)*
-  3. Nella cartella finale, fai doppio click su **`Start Preseed Finder.bat`** (non sull'exe dentro la sottocartella `Preseed Finder/`, che resta lì come supporto). Si apre la finestra dell'app.
-  4. Al primo avvio la dashboard chiede una API key (Gemini, gratuita su [ai.google.dev](https://ai.google.dev/)): si incolla direttamente nella finestra, viene salvata in un file `.env` locale dentro la cartella `Preseed Finder/` — resta solo su quel PC.
+  1. Vai su [Actions](https://github.com/marcomanzotti/preseed-finder/actions), apri l'ultima run completata (✅ verde) del workflow "Build Windows app", scarica l'artifact `PreseedFinder-Windows` in fondo alla pagina (è il file `Preseed Finder.exe`, GitHub lo mette automaticamente in uno zip: estrailo).
+  2. Doppio click su `Preseed Finder.exe`. Si apre la finestra dell'app.
+  3. Al primo avvio la dashboard chiede una API key (Gemini, gratuita su [ai.google.dev](https://ai.google.dev/)): si incolla direttamente nella finestra, viene salvata in un file `.env` accanto all'exe — resta solo su quel PC.
 
 - **Mac (per i test dell'utente)**: `./build_mac_app.sh` genera `Preseed Finder.app` con icona (richiede `pyinstaller`, installato automaticamente nella venv dallo script); doppio click in Finder lo avvia. Pensata per **Claude** (vedi sotto).
 

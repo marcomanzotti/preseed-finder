@@ -1,35 +1,15 @@
 name: Build Windows app
 
-# Costruisce l'app cliccabile "Preseed Finder.exe" su un runner Windows.
-# PyInstaller non puo' cross-compilare da macOS, quindi il build gira qui.
-#
-# Usa --onedir (non --onefile): con --onefile + --windowed l'eseguibile si
-# scompatta in una cartella temp ad ogni avvio, il che e' piu' lento e piu'
-# fragile quando l'app stessa scrive file accanto a se' (.env, preseed.db,
-# il file di log). --onedir produce una cartella stabile con l'exe dentro,
-# zippata per la distribuzione: il collega estrae lo zip e lancia l'exe
-# dentro, che resta sempre nella stessa posizione.
-#
-# Il colega Mac usa Claude (ANTHROPIC_API_KEY); questa build Windows e'
-# pensata per i colleghi e usa Gemini come provider di default (vedi
-# .env.example e l'auto-detect del provider in config.py) perche' piu'
-# economico per un uso frequente da piu' persone.
-#
-# Lo zip e' pubblicato come artifact (scaricabile dalla pagina Actions) e,
-# sui tag v*, allegato a una Release.
-#
-# IMPORTANTE per chi scarica da Actions (non da una Release): GitHub
-# re-zippa ogni artifact, quindi si ottiene uno zip-dentro-zip. Istruzioni
-# per i colleghi: estrarre ENTRAMBI gli zip annidati, poi nella cartella
-# finale fare doppio click su "Start Preseed Finder.bat" (non sull'exe
-# dentro la sottocartella "Preseed Finder/", che resta li' per supporto).
-# Scaricare da una Release (tag v*) evita il doppio zip.
+# Costruisce un singolo file "Preseed Finder.exe" su un runner Windows
+# (PyInstaller non cross-compila da macOS). L'exe e' pubblicato come
+# artifact su Actions: si scarica e si lancia, niente cartelle, niente zip
+# da spiegare.
 
 on:
   push:
     branches: [main]
     tags: ["v*"]
-  workflow_dispatch: {}   # avvio manuale dalla tab Actions
+  workflow_dispatch: {}
 
 jobs:
   build:
@@ -49,7 +29,7 @@ jobs:
 
       - name: Build executable
         run: >
-          pyinstaller --noconfirm --clean --windowed --onedir
+          pyinstaller --noconfirm --clean --windowed --onefile
           --name "Preseed Finder"
           --icon assets/app.ico
           --add-data ".env.example;."
@@ -68,31 +48,14 @@ jobs:
           --hidden-import sources.rockstart
           app.py
 
-      - name: Add a top-level shortcut to the exe
-        # GitHub re-zippa automaticamente ogni artifact scaricato dalla tab
-        # Actions, quindi un collega che scarica l'artifact si ritrova con
-        # uno zip-dentro-zip e l'exe sepolto in "Preseed Finder/Preseed
-        # Finder.exe". Questo .bat in cima alla cartella e' un collegamento
-        # ovvio: "estrai, doppio click su questo file", senza dover sapere
-        # dov'e' l'exe vero.
-        run: |
-          $lines = '@echo off', 'start "" "%~dp0Preseed Finder\Preseed Finder.exe"'
-          Set-Content -Path "dist/Start Preseed Finder.bat" -Value $lines
-        shell: pwsh
-
-      - name: Zip the app folder
-        run: |
-          Compress-Archive -Path "dist/Preseed Finder", "dist/Start Preseed Finder.bat" -DestinationPath "PreseedFinder-Windows.zip"
-        shell: pwsh
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: PreseedFinder-Windows
-          path: PreseedFinder-Windows.zip
+          path: dist/Preseed Finder.exe
 
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: PreseedFinder-Windows.zip
+          files: dist/Preseed Finder.exe
