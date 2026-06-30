@@ -7,6 +7,7 @@ name: Build Windows app
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch: {}   # avvio manuale dalla tab Actions
 
