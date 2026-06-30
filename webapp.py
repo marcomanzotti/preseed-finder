@@ -226,7 +226,7 @@ INDEX_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Preseed Finder</title>
 <style>
-  :root { --bg:#f6f7f9; --card:#fff; --line:#e4e7eb; --ink:#1c2430; --muted:#6b7480; --accent:#2563eb; }
+  :root { --bg:#f6f7f9; --card:#fff; --line:#e4e7eb; --ink:#1c2430; --muted:#6b7480; --accent:#2563eb; --ok:#16a34a; --ok-dark:#15803d; }
   * { box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin:0; background:var(--bg); color:var(--ink); }
   header { background:var(--card); border-bottom:1px solid var(--line); padding:16px 24px; display:flex; align-items:center; justify-content:space-between; }
@@ -235,9 +235,19 @@ INDEX_HTML = """<!DOCTYPE html>
   main { max-width:1180px; margin:0 auto; padding:20px 24px 60px; }
   .banner { background:#ecf3ff; border:1px solid #c7dbff; color:#1e3a8a; border-radius:10px; padding:12px 16px; margin-bottom:18px; font-size:.9rem; display:none; }
   .banner.show { display:block; }
+  /* How it works: 3 passi sempre visibili, per i colleghi non tecnici */
+  .howto { display:flex; gap:10px; flex-wrap:wrap; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:18px; }
+  .howto .step { display:flex; align-items:center; gap:8px; font-size:.86rem; color:var(--ink); }
+  .howto .num { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; background:var(--accent); color:#fff; font-size:.78rem; font-weight:700; flex:none; }
+  .howto .arrow { color:var(--muted); align-self:center; }
   .toolbar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:14px; }
   .toolbar select, .toolbar input[type=text] { padding:7px 9px; border:1px solid var(--line); border-radius:8px; background:#fff; font-size:.85rem; }
   .toolbar label.chk { font-size:.85rem; color:var(--muted); display:flex; align-items:center; gap:5px; }
+  /* Toggle "Ready to contact": il filtro protagonista, in evidenza */
+  .toggle-ready { display:inline-flex; align-items:center; gap:8px; padding:7px 12px; border:1px solid var(--ok); border-radius:20px; background:#fff; color:var(--ok-dark); font-size:.85rem; font-weight:600; cursor:pointer; user-select:none; }
+  .toggle-ready input { accent-color:var(--ok); }
+  .toggle-ready.on { background:var(--ok); color:#fff; }
+  .toggle-ready .rcount { font-weight:700; }
   .count { margin-left:auto; color:var(--muted); font-size:.85rem; }
   button.primary { background:var(--accent); color:#fff; border:none; padding:9px 16px; border-radius:8px; cursor:pointer; font-size:.9rem; font-weight:600; }
   button.primary:disabled { background:#9bb4e8; cursor:not-allowed; }
@@ -254,8 +264,9 @@ INDEX_HTML = """<!DOCTYPE html>
   .badge.UPDATED { background:#dbeafe; color:#1e40af; }
   .badge.contact { background:#fef3c7; color:#92400e; }
   .badge.change { background:#e0e7ff; color:#3730a3; }
-  .mail-btn { display:inline-block; padding:5px 10px; border-radius:7px; background:var(--accent); color:#fff; text-decoration:none; font-size:.8rem; }
-  .mail-btn.disabled { background:#cbd5e1; pointer-events:none; }
+  .mail-btn { display:inline-block; padding:7px 14px; border-radius:8px; background:var(--ok); color:#fff; text-decoration:none; font-size:.82rem; font-weight:600; white-space:nowrap; }
+  .mail-btn:hover { background:var(--ok-dark); }
+  .mail-btn.disabled { background:#e2e6eb; color:#9aa3ad; pointer-events:none; font-weight:500; }
   select.status { padding:5px 7px; border-radius:7px; border:1px solid var(--line); font-size:.8rem; }
   select.status[data-v="Contacted"] { background:#fef9c3; }
   select.status[data-v="Replied"] { background:#dcfce7; }
@@ -319,7 +330,16 @@ INDEX_HTML = """<!DOCTYPE html>
 </header>
 
 <main>
-  <div class="setup-banner" id="setupBanner" onclick="openSetup()">No API key configured yet &mdash; LLM enrichment (email/founder lookup) is disabled. Click here to add one.</div>
+  <div class="setup-banner" id="setupBanner" onclick="openSetup()">No API key configured yet &mdash; AI lookup (stage/sector/founder) is disabled. Click here to add one.</div>
+
+  <div class="howto">
+    <div class="step"><span class="num">1</span> Click <b>&nbsp;Search new startups</b></div>
+    <span class="arrow">&rarr;</span>
+    <div class="step"><span class="num">2</span> Turn on <b>&nbsp;Ready to contact</b> to see who has an email</div>
+    <span class="arrow">&rarr;</span>
+    <div class="step"><span class="num">3</span> Click <b>&nbsp;Contact</b> to email the founder, then set the status</div>
+  </div>
+
   <div class="banner" id="banner"></div>
 
   <div class="progress-container" id="progContainer">
@@ -330,12 +350,16 @@ INDEX_HTML = """<!DOCTYPE html>
   </div>
 
   <div class="toolbar">
+    <label class="toggle-ready" id="readyToggle">
+      <input type="checkbox" id="f_ready" onchange="onReadyToggle()">
+      Ready to contact <span class="rcount" id="readyCount"></span>
+    </label>
     <select id="f_sector" onchange="load()"><option value="">All sectors</option></select>
     <select id="f_country" onchange="load()"><option value="">All countries</option></select>
     <select id="f_stage" onchange="load()"><option value="">All stages</option></select>
     <select id="f_source" onchange="load()"><option value="">All sources</option></select>
-    <label class="chk"><input type="checkbox" id="f_email" onchange="load()"> With email only</label>
-    <label class="chk"><input type="checkbox" id="f_new" onchange="load()"> New only</label>
+    <label class="chk"><input type="checkbox" id="f_email" onchange="load()"> Has email</label>
+    <label class="chk"><input type="checkbox" id="f_new" onchange="load()"> New this run</label>
     <span class="count" id="count"></span>
   </div>
 
@@ -343,10 +367,11 @@ INDEX_HTML = """<!DOCTYPE html>
     <thead>
       <tr>
         <th onclick="sortBy('company_name')">Company</th>
+        <th onclick="sortBy('founder_name')">Founder</th>
         <th onclick="sortBy('sector')">Sector</th>
         <th onclick="sortBy('stage')">Stage</th>
         <th onclick="sortBy('country')">Country</th>
-        <th onclick="sortBy('source')">Source</th>
+        <th onclick="sortBy('source')">Found on</th>
         <th>Contact</th>
         <th>Status</th>
       </tr>
@@ -371,7 +396,7 @@ INDEX_HTML = """<!DOCTYPE html>
         <input type="text" id="batches" placeholder="e.g. Summer 2025,Winter 2025">
       </div>
       <div>
-        <label><input type="checkbox" id="enrich_llm" checked> LLM enrichment (stage/sector/email/founder &mdash; requires an API key in .env, see setup)</label>
+        <label><input type="checkbox" id="enrich_llm" checked> AI enrichment (reads each website to refine stage/sector/founder &mdash; requires an API key, see setup). Emails are always read from the real site, never guessed.</label>
       </div>
     </div>
     <a class="ghost" href="/download" style="display:inline-block;text-decoration:none;margin-bottom:12px;">Download CSV export</a>
@@ -382,12 +407,28 @@ INDEX_HTML = """<!DOCTYPE html>
 <script>
 let DATA = [], MAIL = {subject:"", body:""}, SORT = {key:"company_name", dir:1}, polling = null;
 
+// Nomi leggibili delle fonti (i colleghi non devono vedere sigle tecniche).
+const SOURCE_LABELS = {
+  yc: "Y Combinator",
+  antler: "Antler",
+  cordis: "EU grants (CORDIS)",
+  cordis_eic: "EU grants (CORDIS)",
+  producthunt: "Product Hunt",
+  rockstart: "Rockstart",
+  entrepreneur_first: "Entrepreneur First",
+  betalist: "BetaList",
+  crunchbase: "Crunchbase",
+};
+function sourceLabel(src){ return SOURCE_LABELS[src] || (src || "-"); }
+
 function esc(s){ return (s||"").replace(/[&<>\"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c])); }
 
-function fillFacet(id, values, label){
+function fillFacet(id, values, label, labeller){
   const sel = document.getElementById(id);
   const cur = sel.value;
-  sel.innerHTML = '<option value=\"\">'+label+'</option>' + values.map(v=>`<option>${esc(v)}</option>`).join('');
+  // value = valore tecnico (per la query); testo = etichetta leggibile.
+  sel.innerHTML = '<option value=\"\">'+label+'</option>' +
+    values.map(v=>`<option value=\"${esc(v)}\">${esc(labeller ? labeller(v) : v)}</option>`).join('');
   sel.value = cur;
 }
 
@@ -408,29 +449,53 @@ function badgeHtml(badges){
   }).join('');
 }
 
+// Una startup e' "pronta da contattare" se ha un'email e non e' ancora stata
+// contattata. E' il filtro protagonista per i colleghi.
+function isReady(s){ return !!s.email && s.contact_status === 'To contact'; }
+
 function render(){
   const tb = document.getElementById('tbody');
-  const rows = [...DATA].sort((a,b)=>{
+  const readyOnly = document.getElementById('f_ready').checked;
+
+  let rows = [...DATA];
+  if(readyOnly) rows = rows.filter(isReady);
+  rows.sort((a,b)=>{
     let x=(a[SORT.key]||''), y=(b[SORT.key]||'');
     return x.toString().localeCompare(y.toString()) * SORT.dir;
   });
-  document.getElementById('count').textContent = rows.length + ' startups';
+
+  // Contatore "ready to contact" sempre sul totale caricato (non sul filtrato).
+  const readyTotal = DATA.filter(isReady).length;
+  document.getElementById('readyCount').textContent = '(' + readyTotal + ')';
+  document.getElementById('count').textContent = rows.length + (rows.length === 1 ? ' startup' : ' startups');
   document.getElementById('empty').style.display = rows.length ? 'none' : 'block';
+
   tb.innerHTML = rows.map(s=>{
     const site = s.website ? `<a href=\"${esc(s.website)}\" target=\"_blank\">${esc(s.company_name)}</a>` : esc(s.company_name);
+    const founder = s.founder_name ? esc(s.founder_name) : `<span class=\"muted\">&mdash;</span>`;
     const href = mailHref(s);
-    const mail = href ? `<a class=\"mail-btn\" href=\"${href}\">Contact</a>` : `<span class=\"mail-btn disabled\">No email</span>`;
+    const label = s.founder_name ? 'Contact founder' : 'Contact';
+    const mail = href ? `<a class=\"mail-btn\" href=\"${href}\">${label}</a>` : `<span class=\"mail-btn disabled\">No email yet</span>`;
     const opts = ['To contact','Contacted','Replied'].map(o=>`<option ${o===s.contact_status?'selected':''}>${o}</option>`).join('');
     return `<tr>
       <td class=\"company\">${site}${badgeHtml(s.badges)}<div class=\"muted\">${esc(s.email||'')}</div></td>
+      <td>${founder}</td>
       <td>${esc(s.sector||'-')}</td>
       <td>${esc(s.stage||'-')}</td>
       <td>${esc(s.country||'-')}</td>
-      <td>${esc(s.source||'-')}</td>
+      <td>${esc(sourceLabel(s.source))}</td>
       <td>${mail}</td>
       <td><select class=\"status\" data-v=\"${esc(s.contact_status)}\" onchange=\"setStatus('${esc(s.dedupe_key)}', this)\">${opts}</select></td>
     </tr>`;
   }).join('');
+}
+
+// Quando si attiva/disattiva il toggle "Ready to contact": aggiorna lo stile
+// della pillola e ri-renderizza (filtro client-side, nessuna chiamata server).
+function onReadyToggle(){
+  const on = document.getElementById('f_ready').checked;
+  document.getElementById('readyToggle').classList.toggle('on', on);
+  render();
 }
 
 function sortBy(k){ SORT.dir = (SORT.key===k ? -SORT.dir : 1); SORT.key=k; render(); }
@@ -464,13 +529,18 @@ async function load(){
   fillFacet('f_sector', d.facets.sector, 'All sectors');
   fillFacet('f_country', d.facets.country, 'All countries');
   fillFacet('f_stage', d.facets.stage, 'All stages');
-  fillFacet('f_source', d.facets.source, 'All sources');
+  fillFacet('f_source', d.facets.source, 'All sources', sourceLabel);
   showBanner(d.summary);
   render();
 }
 
 async function setStatus(key, sel){
   sel.dataset.v = sel.value;
+  // Aggiorna il dato locale cosi' il contatore "ready" e il filtro reagiscono
+  // subito (es. una appena "Contacted" esce da "Ready to contact").
+  const row = DATA.find(s=>s.dedupe_key === key);
+  if(row) row.contact_status = sel.value;
+  render();
   await fetch('/startup/'+encodeURIComponent(key)+'/status', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({status: sel.value})
