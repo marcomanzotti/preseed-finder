@@ -4,4 +4,10 @@ __pycache__/
 .env
 *.csv
 *.log
+*.db
+build/
+dist/
+*.spec
 .DS_Store
+
+Preseed Finder.app/

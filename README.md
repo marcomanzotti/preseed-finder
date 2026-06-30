@@ -1,6 +1,12 @@
 # Preseed Finder
 
-Script Python che raccoglie startup early-stage/pre-seed da fonti pubbliche legittime e produce un CSV con nome azienda, sito, settore, founder ed email (quando trovabile). Include anche una semplice interfaccia web locale per lanciare la ricerca e scaricare il CSV dal browser.
+Script Python che raccoglie startup early-stage/pre-seed da fonti pubbliche legittime e produce un CSV con nome azienda, sito, settore, founder ed email (quando trovabile). Include una **dashboard web locale** (in inglese) che accumula le startup tra una ricerca e l'altra, evidenzia cosa è cambiato dall'ultima run (nuove startup, nuovo contatto trovato, cambio stage/settore) e permette di contattarle e tracciarne lo stato. È pensato anche per girare come **app desktop cliccabile** (icona, niente terminale).
+
+## App cliccabile
+
+- **Windows**: build automatica via GitHub Actions (`.github/workflows/build-windows.yml`) → `Preseed Finder.exe` con icona, doppio click → finestra nativa, nessun terminale. L'exe è pubblicato come artifact (e allegato alle Release sui tag `v*`).
+- **Mac** (per i test): `./build_mac_app.sh` genera `Preseed Finder.app` con icona; doppio click in Finder lo avvia.
+- Entrambi usano `app.py` (avvia Flask + finestra pywebview). Al primo avvio scaricano Chromium per Playwright (~150 MB, una sola volta); `.env` e `preseed.db` vivono accanto all'eseguibile.
 
 ## Fonti usate
 
@@ -8,6 +14,7 @@ Script Python che raccoglie startup early-stage/pre-seed da fonti pubbliche legi
 - **Antler** (`sources/antler.py`): legge il portfolio pubblico del VC paneuropeo Antler via browser headless. Antler investe quasi esclusivamente a stadio pre-seed/day-zero.
 - **CORDIS / EIC Accelerator** (`sources/cordis.py`): scarica il dataset bulk ufficiale UE (CORDIS) e filtra i progetti finanziati dall'**EIC Accelerator**, il programma che finanzia direttamente singole startup/SME europee a stadio early con grant + equity. Nessuna API key richiesta.
 - **Product Hunt** (`sources/producthunt.py`): legge i lanci più recenti via API GraphQL ufficiale. Richiede un token gratuito.
+- **Rockstart** (`sources/rockstart.py`): legge il portfolio pubblico dell'acceleratore/VC early-stage Rockstart (NL) via browser headless. Investe a pre-seed/seed.
 
 Esclusioni deliberate:
 - **LinkedIn**: scraping vietato dai Terms of Service, non implementato.
@@ -50,13 +57,21 @@ In alternativa alle variabili nel file `.env`, puoi anche esportarle nell'ambien
 
 ## Uso
 
-### Interfaccia web (locale)
+### Dashboard web (locale)
 
 ```bash
-./start.sh
+./start.sh          # sviluppo: avvia la dashboard nel browser
+# oppure doppio click su "Preseed Finder.app" / "Preseed Finder.exe" (app cliccabile)
 ```
 
-Apre il setup automatico e avvia il server su `http://127.0.0.1:5050`. Da lì puoi scegliere fonti, limite per fonte, batch YC e attivare l'enrichment LLM, vedere il log in tempo reale e scaricare il CSV a fine run.
+Avvia il server su `http://127.0.0.1:5050`. La dashboard (in inglese) mostra:
+- **Tabella** di tutte le startup accumulate, ordinabile e filtrabile (settore, paese, stage, fonte, "solo con email", "solo novità").
+- **Banner notifiche** in cima: cosa è cambiato dall'ultima ricerca (nuove, nuovi contatti, cambi stage/settore).
+- **Badge per riga**: `NEW`, `New contact`, `Stage changed`, ecc.
+- **Bottone Contact** (apre l'email precompilata via `mailto:`) e **dropdown stato** (To contact / Contacted / Replied), salvato per riga.
+- **"Search new startups"** lancia una nuova ricerca (opzioni avanzate — fonti/limite/batch/LLM — in un pannello collassabile); a fine run la tabella si aggiorna e il banner mostra il diff.
+
+I dati sono accumulati in un DB SQLite locale (`preseed.db`): ri-eseguire una ricerca **aggiunge** le nuove startup e aggiorna quelle esistenti senza perdere lo storico né lo stato di contatto. Il CSV resta disponibile come export ("Download CSV export").
 
 ### Riga di comando
 
@@ -71,9 +86,10 @@ Apre il setup automatico e avvia il server su `http://127.0.0.1:5050`. Da lì pu
 Opzioni:
 - `--limit N`: numero massimo di startup per fonte. **Default: nessun limite** (prende tutto il disponibile — può richiedere molto tempo, soprattutto su YC che visita ogni company in dettaglio).
 - `--output path.csv`: percorso file di output (default `startups.csv`)
-- `--sources yc,antler,cordis,producthunt`: quali fonti usare (default tutte tranne Product Hunt se manca il token)
+- `--sources yc,antler,cordis,producthunt,rockstart`: quali fonti usare (default tutte tranne Product Hunt se manca il token)
 - `--batches "Summer 2025,Winter 2025"`: quali batch YC usare (default: gli ultimi 3)
 - `--enrich-llm`: attiva il raffinamento stage/settore/email/founder via Claude (richiede `ANTHROPIC_API_KEY`)
+- `--db path.db`: DB SQLite che accumula le startup tra run e traccia i cambiamenti (default `preseed.db`; `--db none` per saltare). Oltre al CSV, ogni run aggiorna questo DB, che alimenta la dashboard.
 
 ## Output
 

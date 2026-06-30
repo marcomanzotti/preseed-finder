@@ -1,0 +1,47 @@
+name: Build Windows app
+
+# Costruisce l'eseguibile cliccabile "Preseed Finder.exe" su un runner Windows.
+# PyInstaller non puo' cross-compilare da macOS, quindi il build gira qui.
+# L'exe viene pubblicato come artifact (scaricabile dalla pagina Actions) e,
+# sui tag v*, allegato a una Release.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}   # avvio manuale dalla tab Actions
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build executable
+        run: >
+          pyinstaller --noconfirm --clean --windowed --onefile
+          --name "Preseed Finder"
+          --icon assets/app.ico
+          --add-data ".env.example;."
+          app.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PreseedFinder-Windows
+          path: dist/Preseed Finder.exe
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Preseed Finder.exe

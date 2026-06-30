@@ -1,7 +1,10 @@
 from urllib.parse import urlparse
 
 
-def _key(record):
+def dedupe_key(record):
+    """Chiave di deduplica per una startup: dominio del sito (senza www) se
+    presente, altrimenti il nome azienda normalizzato. Riusata da store.py per
+    accumulare le startup tra run diverse."""
     website = record.get("website")
     if website:
         netloc = urlparse(website if "://" in website else f"https://{website}").netloc
@@ -12,7 +15,7 @@ def _key(record):
 def dedupe(records):
     seen = {}
     for record in records:
-        key = _key(record)
+        key = dedupe_key(record)
         if not key:
             continue
         if key not in seen:
