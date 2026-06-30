@@ -36,6 +36,7 @@ rm -rf build dist "Preseed Finder.app"
   --hidden-import dedupe \
   --hidden-import config \
   --hidden-import enrich \
+  --hidden-import email_finder \
   --hidden-import llm_enrich \
   --hidden-import sources \
   --hidden-import sources.yc \
@@ -43,6 +44,9 @@ rm -rf build dist "Preseed Finder.app"
   --hidden-import sources.cordis \
   --hidden-import sources.producthunt \
   --hidden-import sources.rockstart \
+  --hidden-import sources.entrepreneur_first \
+  --hidden-import sources.betalist \
+  --hidden-import sources.crunchbase \
   app.py
 
 # Copia il bundle finale nella root del progetto, dove l'utente se lo aspetta

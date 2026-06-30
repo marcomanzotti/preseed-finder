@@ -189,7 +189,7 @@ def start():
             return jsonify({"ok": False, "error": "A search is already running."}), 409
 
     data = request.get_json(force=True) or {}
-    sources = data.get("sources") or "yc,antler,cordis,producthunt,rockstart"
+    sources = data.get("sources") or "yc,antler,cordis,producthunt,rockstart,entrepreneur_first,betalist"
     limit = data.get("limit") or None
     enrich_llm = bool(data.get("enrich_llm"))
     batches = data.get("batches") or None
@@ -251,6 +251,7 @@ INDEX_HTML = """<!DOCTYPE html>
   td.company a:hover { text-decoration:underline; }
   .badge { display:inline-block; font-size:.68rem; font-weight:700; padding:2px 7px; border-radius:20px; margin-left:6px; vertical-align:middle; }
   .badge.NEW { background:#dcfce7; color:#166534; }
+  .badge.UPDATED { background:#dbeafe; color:#1e40af; }
   .badge.contact { background:#fef3c7; color:#92400e; }
   .badge.change { background:#e0e7ff; color:#3730a3; }
   .mail-btn { display:inline-block; padding:5px 10px; border-radius:7px; background:var(--accent); color:#fff; text-decoration:none; font-size:.8rem; }
@@ -359,7 +360,7 @@ INDEX_HTML = """<!DOCTYPE html>
     <div class="adv-grid">
       <div>
         <label>Sources (comma-separated)</label>
-        <input type="text" id="sources" value="yc,antler,cordis,producthunt,rockstart">
+        <input type="text" id="sources" value="yc,antler,cordis,producthunt,rockstart,entrepreneur_first,betalist">
       </div>
       <div>
         <label>Limit per source (empty = no limit)</label>
@@ -399,7 +400,10 @@ function mailHref(s){
 
 function badgeHtml(badges){
   return (badges||[]).map(b=>{
-    let cls = b==='NEW' ? 'NEW' : (b==='New contact' ? 'contact' : 'change');
+    let cls = 'change';
+    if(b==='NEW') cls='NEW';
+    else if(b==='UPDATED') cls='UPDATED';
+    else if(b==='New contact') cls='contact';
     return `<span class=\"badge ${cls}\">${esc(b)}</span>`;
   }).join('');
 }
@@ -494,33 +498,62 @@ function resetBtn(){
   document.getElementById('searchBtn').textContent = 'Search new startups';
 }
 
+// Estrae l'ultimo contatore "i/N" stampato da un certo prefisso di log
+// (es. "[email]   42/180 ...") per mostrare "X of N" che avanza: e' cosi' che
+// un collega su Windows, senza terminale, capisce che il programma sta
+// lavorando e non si e' bloccato.
+function lastCounter(logText, tag){
+  const re = new RegExp('\\\\['+tag+'\\\\][^\\\\n]*?(\\\\d+)\\\\s*/\\\\s*(\\\\d+)', 'g');
+  let m, last = null;
+  while((m = re.exec(logText)) !== null){ last = [parseInt(m[1]), parseInt(m[2])]; }
+  return last;
+}
+
+// Decide la frase di stato (in inglese, leggibile) e la percentuale in base a
+// quale fase la pipeline ha raggiunto. L'ordine dei controlli va dal PIU'
+// avanzato al meno avanzato, cosi' si mostra sempre la fase piu' recente.
+function describeProgress(logText){
+  const phase = (tag, label, base) => {
+    const c = lastCounter(logText, tag);
+    if(c){ return { status: label+' '+c[0]+' of '+c[1]+'...', progress: base }; }
+    return { status: label+'...', progress: base };
+  };
+  if(logText.includes('DB aggiornato') || logText.includes('scritto'))
+    return { status: 'Finalizing and saving results...', progress: 96 };
+  if(logText.includes('[llm]') && (logText.includes('arricchisco') || /\\[llm\\][^\\n]*\\d+\\s*\\/\\s*\\d+/.test(logText)))
+    return phase('llm', 'Reading websites with AI to refine stage & founders', 85);
+  if(logText.includes('[email]'))
+    return phase('email', 'Looking up contact emails on company sites', 72);
+  if(logText.includes('[enrich]'))
+    return { status: 'Looking up extra emails...', progress: 70 };
+  if(logText.includes('[producthunt]')) return { status: 'Fetching Product Hunt...', progress: 60 };
+  if(logText.includes('[betalist]')) return { status: 'Fetching BetaList...', progress: 52 };
+  if(logText.includes('[entrepreneur_first]') || logText.includes("'entrepreneur_first'"))
+    return { status: 'Fetching Entrepreneur First...', progress: 46 };
+  if(logText.includes('[cordis]')) return { status: 'Fetching EU grant database (CORDIS)...', progress: 40 };
+  if(logText.includes('[rockstart]')) return { status: 'Fetching Rockstart...', progress: 32 };
+  if(logText.includes('[antler]')) return { status: 'Fetching Antler...', progress: 24 };
+  if(logText.includes('[yc]') || logText.includes("'yc'")) return { status: 'Fetching Y Combinator...', progress: 14 };
+  return { status: 'Starting search...', progress: 6 };
+}
+
 async function poll(){
   const r = await fetch('/status'); const d = await r.json();
   const log = document.getElementById('log');
   log.textContent = d.log || '...'; log.scrollTop = log.scrollHeight;
 
-  // Aggiorna il progress status in base ai messaggi di log
   const progStatus = document.getElementById('progStatus');
   const progFill = document.getElementById('progFill');
-  let status = 'Running...', progress = 30;
-  if(d.log.includes('[yc]')) status = 'Fetching Y Combinator...', progress = 10;
-  else if(d.log.includes('[antler]')) status = 'Fetching Antler...', progress = 25;
-  else if(d.log.includes('[rockstart]')) status = 'Fetching Rockstart...', progress = 40;
-  else if(d.log.includes('[cordis]')) status = 'Fetching CORDIS...', progress = 55;
-  else if(d.log.includes('[producthunt]')) status = 'Fetching Product Hunt...', progress = 70;
-  else if(d.log.includes('[enrich]')) status = 'Enriching emails...', progress = 75;
-  else if(d.log.includes('[llm]')) status = 'Enriching with LLM (this may take a few minutes)...', progress = 85;
-  else if(d.log.includes('DB aggiornato')) status = 'Finalizing...', progress = 95;
-  progStatus.textContent = status;
-  progFill.style.width = progress + '%';
+  const p = describeProgress(d.log || '');
+  progStatus.textContent = p.status;
+  progFill.style.width = p.progress + '%';
 
   if(!d.running){
     clearInterval(polling); resetBtn();
     await load();
-    document.getElementById('progContainer').classList.remove('show');
     document.getElementById('progFill').style.width = '100%';
-    progStatus.textContent = 'Done!';
-    setTimeout(()=>document.getElementById('progContainer').classList.remove('show'), 2000);
+    progStatus.textContent = 'Done! Your dashboard is up to date.';
+    setTimeout(()=>document.getElementById('progContainer').classList.remove('show'), 2200);
   }
 }
 

@@ -243,13 +243,21 @@ def get_startups(db_path=DEFAULT_DB_PATH, filters=None):
     conn = _connect(db_path)
     try:
         rows = conn.execute(sql, params).fetchall()
-        # Annota ogni startup con i tipi di change dell'ultima volta che è
-        # cambiata (per i badge: new_contact, stage_changed, ecc.).
+
+        # I badge "UPDATED" devono riferirsi SOLO all'ultima run (come "NEW"),
+        # non a cambiamenti vecchi: si prendono i field-change il cui changed_at
+        # coincide col timestamp dell'ultima run (MAX(changed_at)).
+        last_row = conn.execute("SELECT MAX(changed_at) AS last FROM changes").fetchone()
+        last_run = last_row["last"] if last_row else None
+
         recent_fields = {}
-        for r in conn.execute(
-            "SELECT dedupe_key, field FROM changes WHERE change_type = 'field'"
-        ).fetchall():
-            recent_fields.setdefault(r["dedupe_key"], set()).add(r["field"])
+        if last_run:
+            for r in conn.execute(
+                "SELECT dedupe_key, field FROM changes "
+                "WHERE change_type = 'field' AND changed_at = ?",
+                (last_run,),
+            ).fetchall():
+                recent_fields.setdefault(r["dedupe_key"], set()).add(r["field"])
 
         result = []
         for row in rows:
@@ -262,9 +270,20 @@ def get_startups(db_path=DEFAULT_DB_PATH, filters=None):
 
 
 def _badges_for(startup, changed_fields):
-    badges = []
+    """Badge per una riga.
+
+    - NEW (verde): startup mai vista prima di quest'ultima run.
+    - UPDATED (blu): startup gia' nota che in quest'ultima run ha ricevuto info
+      nuova; accanto, badge di dettaglio su COSA e' cambiato.
+    NEW e UPDATED sono mutuamente esclusivi: una riga nuova e' "NEW", non
+    "UPDATED" (e' tutta nuova, non un aggiornamento di qualcosa di esistente)."""
     if startup.get("is_new"):
-        badges.append("NEW")
+        return ["NEW"]
+
+    if not changed_fields:
+        return []
+
+    badges = ["UPDATED"]
     if "email" in changed_fields:
         badges.append("New contact")
     if "stage" in changed_fields:

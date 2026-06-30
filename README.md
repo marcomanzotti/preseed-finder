@@ -24,6 +24,10 @@ Le due build sono pensate per provider diversi, scelti automaticamente in base a
 
 Se il `.env` ha solo una delle due chiavi, quella viene usata in automatico. Se manca del tutto, la dashboard mostra un banner con un campo per incollarla al volo (salvata localmente, mai committata). **Se una run finisce con tutte le email vuote**, controllare nel log della run (sezione "Advanced" della dashboard, o `preseed_finder.log`) la riga `[llm] provider configurato: ...` — se manca del tutto o dice `ATTENZIONE ... SALTATO`, l'enrichment non è partito per mancanza di chiave.
 
+## Come vengono trovate le email (verificate, mai inventate)
+
+Le email di contatto **non vengono mai indovinate**. Un modulo dedicato (`email_finder.py`) scarica l'HTML reale del sito di ogni startup (home + pagine `/contact`, `/about`, `/team`...) ed estrae le email **effettivamente presenti** nel testo e nei link `mailto:`, scartando rumore e provider di terzi e tenendo solo email **il cui dominio combacia col dominio del sito**. Se non trova nulla di affidabile, lascia la colonna **vuota** (meglio vuoto che sbagliato). L'LLM (vedi sotto) non assegna più l'email: si limita a stage, settore, founder e, se manca, l'URL del sito. *(In passato l'LLM "indovinava" email plausibili ma inesistenti — es. `hello@nomeazienda.com` — ora questo non accade più.)*
+
 ## Fonti usate
 
 - **Y Combinator** (`sources/yc.py`): legge i batch più recenti via browser headless (Playwright). I batch recenti sono un buon proxy per pre-seed/seed perché YC investe a quello stadio.
@@ -31,6 +35,9 @@ Se il `.env` ha solo una delle due chiavi, quella viene usata in automatico. Se 
 - **CORDIS / EIC Accelerator** (`sources/cordis.py`): scarica il dataset bulk ufficiale UE (CORDIS) e filtra i progetti finanziati dall'**EIC Accelerator**, il programma che finanzia direttamente singole startup/SME europee a stadio early con grant + equity. Nessuna API key richiesta.
 - **Product Hunt** (`sources/producthunt.py`): legge i lanci più recenti via API GraphQL ufficiale. Richiede un token gratuito.
 - **Rockstart** (`sources/rockstart.py`): legge il portfolio pubblico dell'acceleratore/VC early-stage Rockstart (NL) via browser headless. Investe a pre-seed/seed.
+- **Entrepreneur First** (`sources/entrepreneur_first.py`): legge la pagina aziende pubblica di EF (HTML, no browser). EF costruisce team da zero → pre-seed puro, ed **espone già il nome del founder** per ogni azienda.
+- **BetaList** (`sources/betalist.py`): directory di startup early-stage in fase di lancio (HTML, no browser); risolve il sito reale di ogni azienda seguendo il redirect interno `/visit`.
+- **Crunchbase** (`sources/crunchbase.py`): **opt-in a pagamento**. Usa l'API ufficiale v4 (`searches/organizations`) **solo se** `CRUNCHBASE_API_KEY` è nel `.env`; altrimenti si auto-salta. È la fonte più ricca su pre-seed/founder ma richiede un piano a pagamento (niente più free tier dal 2026). Non è nel set di default.
 
 Esclusioni deliberate:
 - **LinkedIn**: scraping vietato dai Terms of Service, non implementato.

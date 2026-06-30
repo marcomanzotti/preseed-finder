@@ -25,6 +25,13 @@ PRODUCTHUNT_TOKEN = os.environ.get("PRODUCTHUNT_TOKEN", "").strip()
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
+# Fonti a pagamento (opt-in): usate SOLO se la rispettiva key e' presente nel
+# .env, altrimenti la fonte si auto-salta (come Product Hunt col suo token).
+# Sono le fonti con piu' dati su pre-seed/founder, ma costano: chi vuole la
+# massima coverage e accetta il costo mette la key qui.
+CRUNCHBASE_API_KEY = os.environ.get("CRUNCHBASE_API_KEY", "").strip()
+DEALROOM_API_KEY = os.environ.get("DEALROOM_API_KEY", "").strip()
+
 # Provider LLM: "anthropic" (Claude) o "gemini" (Google, più economico).
 # Se LLM_PROVIDER non e' impostato esplicitamente, lo si deduce da quale
 # chiave e' presente nel .env, cosi' un .env con solo ANTHROPIC_API_KEY usa

@@ -39,6 +39,7 @@ jobs:
           --hidden-import dedupe
           --hidden-import config
           --hidden-import enrich
+          --hidden-import email_finder
           --hidden-import llm_enrich
           --hidden-import sources
           --hidden-import sources.yc
@@ -46,6 +47,9 @@ jobs:
           --hidden-import sources.cordis
           --hidden-import sources.producthunt
           --hidden-import sources.rockstart
+          --hidden-import sources.entrepreneur_first
+          --hidden-import sources.betalist
+          --hidden-import sources.crunchbase
           app.py
 
       - name: Upload artifact
