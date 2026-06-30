@@ -208,6 +208,14 @@ INDEX_HTML = """<!DOCTYPE html>
   .adv-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding-bottom:14px; }
   .adv-grid label { font-size:.82rem; color:var(--muted); display:block; margin-bottom:4px; }
   .adv-grid input[type=text], .adv-grid input[type=number] { width:100%; padding:7px; border:1px solid var(--line); border-radius:8px; }
+  .progress-container { display:none; margin-top:20px; }
+  .progress-container.show { display:block; }
+  .progress-status { font-size:.85rem; color:var(--muted); margin-bottom:8px; }
+  .progress-bar { height:6px; background:var(--line); border-radius:4px; overflow:hidden; }
+  .progress-bar-fill { height:100%; background:linear-gradient(90deg, var(--accent), #10b981); animation:pulse 1.5s infinite; width:0%; }
+  @keyframes pulse { 0%,100%{ opacity:1 } 50%{ opacity:.6 } }
+  .spinner { display:inline-block; width:14px; height:14px; border:2px solid var(--line); border-top:2px solid var(--accent); border-radius:50%; animation:spin .8s linear infinite; margin-right:6px; }
+  @keyframes spin { to{ transform:rotate(360deg) } }
   pre#log { background:#0b0f17; color:#cbd5e1; padding:12px; border-radius:8px; max-height:240px; overflow:auto; font-size:.76rem; white-space:pre-wrap; margin-top:10px; }
   .empty { text-align:center; padding:40px; color:var(--muted); }
 </style>
@@ -223,6 +231,13 @@ INDEX_HTML = """<!DOCTYPE html>
 
 <main>
   <div class="banner" id="banner"></div>
+
+  <div class="progress-container" id="progContainer">
+    <div class="progress-status"><span class="spinner"></span><span id="progStatus">Starting search...</span></div>
+    <div class="progress-bar">
+      <div class="progress-bar-fill" id="progFill"></div>
+    </div>
+  </div>
 
   <div class="toolbar">
     <select id="f_sector" onchange="load()"><option value="">All sectors</option></select>
@@ -373,6 +388,7 @@ async function runSearch(){
   document.getElementById('searchBtn').disabled = true;
   document.getElementById('searchBtn').textContent = 'Searching...';
   const log = document.getElementById('log'); log.style.display='block'; log.textContent='Starting...\\n';
+  const prog = document.getElementById('progContainer'); prog.classList.add('show');
   const body = {
     sources: document.getElementById('sources').value,
     limit: document.getElementById('limit').value || null,
@@ -380,7 +396,7 @@ async function runSearch(){
     enrich_llm: document.getElementById('enrich_llm').checked,
   };
   const r = await fetch('/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-  if(!r.ok){ const e = await r.json(); log.textContent = 'Error: '+e.error; resetBtn(); return; }
+  if(!r.ok){ const e = await r.json(); log.textContent = 'Error: '+e.error; resetBtn(); prog.classList.remove('show'); return; }
   polling = setInterval(poll, 1200);
 }
 
@@ -393,9 +409,29 @@ async function poll(){
   const r = await fetch('/status'); const d = await r.json();
   const log = document.getElementById('log');
   log.textContent = d.log || '...'; log.scrollTop = log.scrollHeight;
+
+  // Aggiorna il progress status in base ai messaggi di log
+  const progStatus = document.getElementById('progStatus');
+  const progFill = document.getElementById('progFill');
+  let status = 'Running...', progress = 30;
+  if(d.log.includes('[yc]')) status = 'Fetching Y Combinator...', progress = 10;
+  else if(d.log.includes('[antler]')) status = 'Fetching Antler...', progress = 25;
+  else if(d.log.includes('[rockstart]')) status = 'Fetching Rockstart...', progress = 40;
+  else if(d.log.includes('[cordis]')) status = 'Fetching CORDIS...', progress = 55;
+  else if(d.log.includes('[producthunt]')) status = 'Fetching Product Hunt...', progress = 70;
+  else if(d.log.includes('[enrich]')) status = 'Enriching emails...', progress = 75;
+  else if(d.log.includes('[llm]')) status = 'Enriching with LLM (this may take a few minutes)...', progress = 85;
+  else if(d.log.includes('DB aggiornato')) status = 'Finalizing...', progress = 95;
+  progStatus.textContent = status;
+  progFill.style.width = progress + '%';
+
   if(!d.running){
     clearInterval(polling); resetBtn();
     await load();
+    document.getElementById('progContainer').classList.remove('show');
+    document.getElementById('progFill').style.width = '100%';
+    progStatus.textContent = 'Done!';
+    setTimeout(()=>document.getElementById('progContainer').classList.remove('show'), 2000);
   }
 }
 
