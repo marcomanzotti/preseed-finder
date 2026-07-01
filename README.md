@@ -37,11 +37,16 @@ Le email di contatto **non vengono mai indovinate**. Un modulo dedicato (`email_
 - **Rockstart** (`sources/rockstart.py`): legge il portfolio pubblico dell'acceleratore/VC early-stage Rockstart (NL) via browser headless. Investe a pre-seed/seed.
 - **Entrepreneur First** (`sources/entrepreneur_first.py`): legge la pagina aziende pubblica di EF (HTML, no browser). EF costruisce team da zero → pre-seed puro, ed **espone già il nome del founder** per ogni azienda.
 - **BetaList** (`sources/betalist.py`): directory di startup early-stage in fase di lancio (HTML, no browser); risolve il sito reale di ogni azienda seguendo il redirect interno `/visit`.
+- **Hacker News – Show HN** (`sources/hackernews.py`): lanci "Show HN" via API Algolia (gratis, no key). Sono prodotti pubblicati quasi sempre dai founder stessi, appena usciti → ottima fonte pre-seed per software/consumer US/EU.
+- **Reddit** (`sources/reddit.py`): lanci dei founder su r/SideProject, r/roastmystartup, r/indiehackers, r/alphaandbetausers. Reddit ha chiuso lo scraping pubblico: con `REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET` (app **gratuita** su reddit.com/prefs/apps) usa l'API OAuth affidabile; senza credenziali prova l'accesso pubblico best-effort (spesso 403 dai data-center) e si auto-salta con un messaggio chiaro. Tiene solo i post con un sito esterno (contattabili).
 - **Crunchbase** (`sources/crunchbase.py`): **opt-in a pagamento**. Usa l'API ufficiale v4 (`searches/organizations`) **solo se** `CRUNCHBASE_API_KEY` è nel `.env`; altrimenti si auto-salta. È la fonte più ricca su pre-seed/founder ma richiede un piano a pagamento (niente più free tier dal 2026). Non è nel set di default.
 
 Esclusioni deliberate:
 - **LinkedIn**: scraping vietato dai Terms of Service, non implementato.
-- **Wellfound**: protetto da CAPTCHA attivo (DataDome) anche con browser reale, non bypassato.
+- **Wellfound**: protetto da CAPTCHA attivo (DataDome / Cloudflare, 403) anche con browser reale, non bypassato.
+- **Product Hunt "upcoming"**: la pagina pubblica risponde 403 e l'API ufficiale non espone i prodotti "coming soon"; usiamo i lanci Product Hunt normali via API.
+- **Techstars / portfolio acceleratori generici**: la pagina renderizza solo ex-alunni "featured" (per lo più aziende ormai mature, non pre-seed) e le card **non contengono il sito** dell'azienda → record non contattabili. Usiamo invece venture-builder che investono davvero pre-seed ed espongono il sito (Antler, EF, Rockstart).
+- **Liste curate a pagamento** (GrowthList, FundraiseInsider e simili): elenchi derivati/datati dietro paywall; sono riassunti manuali di dati che raccogliamo già dalle fonti primarie.
 - **Dealroom / EU-Startups**: protetti da anti-bot (403), non bypassati. Dealroom offre un'API a pagamento se in futuro serve quella fonte.
 - **F6S**: la pagina restituisce 405 sul fetch diretto, non scrapabile senza ulteriori permessi.
 - **Registro societario lituano / directory "Startup Lithuania"**: verificati dal vivo, non utilizzabili (il registro non ha filtro per stage; la directory aveva solo 1 startup pubblicata, e conteneva un tentativo di prompt injection nel contenuto).

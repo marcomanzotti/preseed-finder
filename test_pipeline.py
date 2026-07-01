@@ -12,6 +12,7 @@ import qualify
 import email_finder
 import store
 from sources import hackernews
+from sources import reddit
 
 
 class TestQualify(unittest.TestCase):
@@ -125,6 +126,24 @@ class TestHackerNews(unittest.TestCase):
         self.assertEqual(hackernews._clean_name("Show HN: Acme - a tool"), "Acme")
         self.assertEqual(hackernews._clean_name("Launch HN: Beta Co: does things"), "Beta Co")
         self.assertEqual(hackernews._clean_name("Show HN: Gamma"), "Gamma")
+
+
+class TestReddit(unittest.TestCase):
+    def test_product_url_accepts_external_site(self):
+        self.assertTrue(reddit._is_product_url("https://getacme.io"))
+        self.assertTrue(reddit._is_product_url("https://www.foo.com/app"))
+
+    def test_product_url_rejects_social_and_reddit(self):
+        self.assertFalse(reddit._is_product_url("https://www.reddit.com/r/x/comments/1"))
+        self.assertFalse(reddit._is_product_url("https://youtube.com/watch?v=1"))
+        self.assertFalse(reddit._is_product_url("https://apps.apple.com/app/id1"))
+        self.assertFalse(reddit._is_product_url(None))
+        self.assertFalse(reddit._is_product_url("not-a-url"))
+
+    def test_name_from_host(self):
+        self.assertEqual(reddit._name_from_host("getacme.io"), "Getacme")
+        self.assertEqual(reddit._name_from_host("my-startup.co.uk"), "My Startup")
+        self.assertEqual(reddit._name_from_host("foo.com"), "Foo")
 
 
 class TestStoreMigration(unittest.TestCase):

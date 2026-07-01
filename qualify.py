@@ -60,7 +60,7 @@ NON_TARGET_TLDS = {
 TARGET_TLDS = {"us", "ca"} | (TARGET_ISO2 - {"us", "ca"})
 
 # Fonti che per costruzione portano startup molto early (alzano la confidence).
-PRESEED_SOURCES = {"antler", "entrepreneur_first", "rockstart", "betalist", "hackernews"}
+PRESEED_SOURCES = {"antler", "entrepreneur_first", "rockstart", "betalist", "hackernews", "reddit"}
 
 # Segnali di funding OLTRE il pre-seed nel testo del sito. "seed" e' escluso
 # quando preceduto da "pre-"/"pre " (vedi _beyond_funding_in_text).

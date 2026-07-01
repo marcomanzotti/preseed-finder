@@ -190,7 +190,7 @@ def start():
             return jsonify({"ok": False, "error": "A search is already running."}), 409
 
     data = request.get_json(force=True) or {}
-    sources = data.get("sources") or "yc,antler,cordis,producthunt,rockstart,entrepreneur_first,betalist"
+    sources = data.get("sources") or "yc,antler,cordis,producthunt,rockstart,entrepreneur_first,betalist,hackernews,reddit"
     limit = data.get("limit") or None
     enrich_llm = bool(data.get("enrich_llm"))
     batches = data.get("batches") or None
@@ -395,7 +395,7 @@ INDEX_HTML = """<!DOCTYPE html>
     <div class="adv-grid">
       <div>
         <label>Sources (comma-separated)</label>
-        <input type="text" id="sources" value="yc,antler,cordis,producthunt,rockstart,entrepreneur_first,betalist">
+        <input type="text" id="sources" value="yc,antler,cordis,producthunt,rockstart,entrepreneur_first,betalist,hackernews,reddit">
       </div>
       <div>
         <label>Limit per source (empty = no limit)</label>
@@ -427,6 +427,8 @@ const SOURCE_LABELS = {
   rockstart: "Rockstart",
   entrepreneur_first: "Entrepreneur First",
   betalist: "BetaList",
+  hackernews: "Hacker News (Show HN)",
+  reddit: "Reddit (founder launches)",
   crunchbase: "Crunchbase",
 };
 function sourceLabel(src){ return SOURCE_LABELS[src] || (src || "-"); }
@@ -617,6 +619,8 @@ function describeProgress(logText){
     return phase('email', 'Looking up contact emails on company sites', 72);
   if(logText.includes('[enrich]'))
     return { status: 'Looking up extra emails...', progress: 70 };
+  if(logText.includes('[reddit]')) return { status: 'Fetching Reddit founder launches...', progress: 64 };
+  if(logText.includes('[hackernews]')) return { status: 'Fetching Hacker News (Show HN)...', progress: 62 };
   if(logText.includes('[producthunt]')) return { status: 'Fetching Product Hunt...', progress: 60 };
   if(logText.includes('[betalist]')) return { status: 'Fetching BetaList...', progress: 52 };
   if(logText.includes('[entrepreneur_first]') || logText.includes("'entrepreneur_first'"))

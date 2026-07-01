@@ -32,6 +32,12 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 CRUNCHBASE_API_KEY = os.environ.get("CRUNCHBASE_API_KEY", "").strip()
 DEALROOM_API_KEY = os.environ.get("DEALROOM_API_KEY", "").strip()
 
+# Reddit: credenziali opt-in per l'API OAuth (gratis). Crea una "web app" su
+# https://www.reddit.com/prefs/apps e incolla qui client id/secret. Senza, la
+# fonte prova l'accesso pubblico best-effort (spesso 403 dai data-center).
+REDDIT_CLIENT_ID = os.environ.get("REDDIT_CLIENT_ID", "").strip()
+REDDIT_CLIENT_SECRET = os.environ.get("REDDIT_CLIENT_SECRET", "").strip()
+
 # Provider LLM: "anthropic" (Claude) o "gemini" (Google, più economico).
 # Se LLM_PROVIDER non e' impostato esplicitamente, lo si deduce da quale
 # chiave e' presente nel .env, cosi' un .env con solo ANTHROPIC_API_KEY usa

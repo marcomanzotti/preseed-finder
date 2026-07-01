@@ -1,7 +1,7 @@
 import argparse
 import csv
 
-from sources import yc, producthunt, antler, cordis, rockstart, entrepreneur_first, betalist, crunchbase, hackernews
+from sources import yc, producthunt, antler, cordis, rockstart, entrepreneur_first, betalist, crunchbase, hackernews, reddit
 from dedupe import dedupe, dedupe_key
 from enrich import enrich_missing_emails
 import email_finder
@@ -21,7 +21,7 @@ def main():
     parser = argparse.ArgumentParser(description="Trova startup pre-seed/early-stage e produce un CSV con almeno un contatto per startup.")
     parser.add_argument("--limit", type=int, default=None, help="Numero massimo di startup per fonte. Default: nessun limite (prende tutto il disponibile).")
     parser.add_argument("--output", default="startups.csv", help="Percorso file CSV di output (default: startups.csv)")
-    parser.add_argument("--sources", default="yc,producthunt,antler,cordis,rockstart,entrepreneur_first,betalist,hackernews", help="Fonti da usare, separate da virgola. Disponibili: yc, producthunt, antler, cordis, rockstart, entrepreneur_first, betalist, hackernews, crunchbase.")
+    parser.add_argument("--sources", default="yc,producthunt,antler,cordis,rockstart,entrepreneur_first,betalist,hackernews,reddit", help="Fonti da usare, separate da virgola. Disponibili: yc, producthunt, antler, cordis, rockstart, entrepreneur_first, betalist, hackernews, reddit, crunchbase.")
     parser.add_argument("--db", default=store.DEFAULT_DB_PATH, help="Percorso DB SQLite che accumula le startup tra run (default: preseed.db). Vuoto/'none' per saltare.")
     parser.add_argument("--batches", default=None, help="Batch YC da usare, separati da virgola (es. 'Summer 2025,Winter 2025'). Default: gli ultimi 3.")
     parser.add_argument("--enrich-llm", action="store_true", help="Usa un LLM (Claude o Gemini, vedi LLM_PROVIDER in .env) per stimare lo stage reale, il settore e trovare email/founder leggendo il sito (richiede ANTHROPIC_API_KEY o GEMINI_API_KEY).")
@@ -52,6 +52,8 @@ def main():
                 records = crunchbase.fetch(limit=args.limit)
             elif name == "hackernews":
                 records = hackernews.fetch(limit=args.limit)
+            elif name == "reddit":
+                records = reddit.fetch(limit=args.limit)
             else:
                 print(f"[main] fonte sconosciuta '{name}', salto.")
                 continue
