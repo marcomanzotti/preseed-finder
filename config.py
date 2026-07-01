@@ -60,3 +60,25 @@ REQUEST_TIMEOUT = 15
 USER_AGENT = "Mozilla/5.0 (compatible; PreseedFinder/1.0)"
 
 HUNTER_MONTHLY_LIMIT = 25
+
+# --- Enrichment / performance ---------------------------------------------
+# Numero di siti/startup elaborati in parallelo (crawl email + enrichment LLM).
+# La pipeline e' I/O-bound (HTTP + API), quindi la concorrenza da' un grosso
+# speedup. Tenuto basso per non superare i rate-limit dei provider LLM.
+ENRICH_WORKERS = int(os.environ.get("ENRICH_WORKERS", "6"))
+
+# Massimo numero di caratteri di testo del sito passati all'LLM per startup.
+# L'LLM NON naviga piu' (niente web_fetch): riceve solo questo testo gia'
+# ripulito, cosi' i token per chiamata sono piccoli e deterministici.
+LLM_MAX_SITE_CHARS = int(os.environ.get("LLM_MAX_SITE_CHARS", "8000"))
+
+# Tentativi con backoff esponenziale sulle chiamate LLM (429/timeout) prima di
+# arrendersi. Evita di perdere record silenziosamente quando si spinge la
+# concorrenza contro i rate-limit tokens-per-minute.
+LLM_MAX_RETRIES = int(os.environ.get("LLM_MAX_RETRIES", "3"))
+
+# --- Qualificazione pre-seed ----------------------------------------------
+# Sopra questa soglia di raccolta totale (USD) una startup NON e' piu' pre-seed
+# e viene esclusa. Usata solo quando un dato di funding e' disponibile (fonte
+# Crunchbase/Dealroom con key, o segnale esplicito sul sito).
+SEED_THRESHOLD_USD = int(os.environ.get("SEED_THRESHOLD_USD", "3000000"))

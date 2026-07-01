@@ -33,7 +33,7 @@ def fetch(limit=None, country=None):
     payload = {
         "field_ids": [
             "identifier", "website_url", "categories",
-            "last_funding_type", "location_identifiers",
+            "last_funding_type", "location_identifiers", "funding_total",
         ],
         "query": [
             {
@@ -79,6 +79,9 @@ def fetch(limit=None, country=None):
         country_val = locations[-1].get("value") if locations else None
         funding = props.get("last_funding_type")
         stage = "pre-seed" if funding == "pre_seed" else ("seed" if funding == "seed" else None)
+        # funding_total (dato autoritativo usato da qualify.py per il gate stage).
+        total = props.get("funding_total") or {}
+        total_usd = total.get("value_usd") if isinstance(total, dict) else None
 
         records.append({
             "company_name": name,
@@ -89,6 +92,8 @@ def fetch(limit=None, country=None):
             "email": None,
             "country": country_val,
             "source": "crunchbase",
+            "last_funding_type": funding,   # es. "pre_seed", "seed", "series_a"
+            "total_raised": total_usd,      # USD, per SEED_THRESHOLD_USD
         })
 
     print(f"[crunchbase] {len(records)} startup estratte dall'API.")

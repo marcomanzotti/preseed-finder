@@ -45,29 +45,54 @@ def _connect(db_path):
     return conn
 
 
+# Colonne aggiunte dopo la prima versione: su DB gia' esistenti vanno create con
+# ALTER TABLE (SQLite non ha "ADD COLUMN IF NOT EXISTS"), altrimenti le run
+# vecchie non avrebbero i campi di qualificazione.
+_ADDED_COLUMNS = {
+    "qualified": "INTEGER DEFAULT 1",
+    "exclude_reason": "TEXT",
+    "preseed_confidence": "TEXT",
+    "stage_reason": "TEXT",
+    "enriched_at": "TEXT",
+}
+
+
+def _migrate_add_columns(conn):
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(startups)").fetchall()}
+    for col, decl in _ADDED_COLUMNS.items():
+        if col not in existing:
+            conn.execute(f"ALTER TABLE startups ADD COLUMN {col} {decl}")
+
+
 def init_db(db_path=DEFAULT_DB_PATH):
-    """Crea le tabelle se non esistono. Idempotente."""
+    """Crea le tabelle se non esistono e migra colonne mancanti. Idempotente."""
     conn = _connect(db_path)
     try:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS startups (
-                dedupe_key     TEXT PRIMARY KEY,
-                company_name   TEXT,
-                website        TEXT,
-                sector         TEXT,
-                stage          TEXT,
-                founder_name   TEXT,
-                email          TEXT,
-                country        TEXT,
-                source         TEXT,
-                first_seen     TEXT,
-                last_seen      TEXT,
-                contact_status TEXT DEFAULT 'To contact',
-                is_new         INTEGER DEFAULT 0
+                dedupe_key         TEXT PRIMARY KEY,
+                company_name       TEXT,
+                website            TEXT,
+                sector             TEXT,
+                stage              TEXT,
+                founder_name       TEXT,
+                email              TEXT,
+                country            TEXT,
+                source             TEXT,
+                first_seen         TEXT,
+                last_seen          TEXT,
+                contact_status     TEXT DEFAULT 'To contact',
+                is_new             INTEGER DEFAULT 0,
+                qualified          INTEGER DEFAULT 1,
+                exclude_reason     TEXT,
+                preseed_confidence TEXT,
+                stage_reason       TEXT,
+                enriched_at        TEXT
             )
             """
         )
+        _migrate_add_columns(conn)
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS changes (
@@ -159,8 +184,9 @@ def upsert_records(records, db_path=DEFAULT_DB_PATH):
                     """
                     INSERT INTO startups
                         (dedupe_key, company_name, website, sector, stage, founder_name,
-                         email, country, source, first_seen, last_seen, contact_status, is_new)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                         email, country, source, first_seen, last_seen, contact_status, is_new,
+                         qualified, exclude_reason, preseed_confidence, stage_reason, enriched_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
                     """,
                     (
                         key,
@@ -175,6 +201,11 @@ def upsert_records(records, db_path=DEFAULT_DB_PATH):
                         now,
                         now,
                         DEFAULT_CONTACT_STATUS,
+                        1 if record.get("qualified", 1) else 0,
+                        record.get("exclude_reason"),
+                        record.get("preseed_confidence"),
+                        record.get("stage_reason"),
+                        now if record.get("_enriched") else None,
                     ),
                 )
                 _record_change(conn, key, "new", None, None, record.get("company_name"), now)
@@ -201,6 +232,17 @@ def upsert_records(records, db_path=DEFAULT_DB_PATH):
                         report.sector_changes += 1
                     elif field in ("website", "founder_name"):
                         report.website_or_founder_updates += 1
+
+            # Campi di qualificazione: sempre riscritti (riflettono la run
+            # corrente; `qualified` puo' essere 0, quindi fuori dal loop
+            # "non sovrascrivere con vuoto" dei campi monitorati sopra).
+            updates["qualified"] = 1 if record.get("qualified", 1) else 0
+            updates["exclude_reason"] = record.get("exclude_reason")
+            updates["preseed_confidence"] = record.get("preseed_confidence")
+            if record.get("stage_reason"):
+                updates["stage_reason"] = record["stage_reason"]
+            if record.get("_enriched"):
+                updates["enriched_at"] = now
 
             updates["last_seen"] = now
             set_clause = ", ".join(f"{f} = ?" for f in updates)
@@ -236,6 +278,10 @@ def get_startups(db_path=DEFAULT_DB_PATH, filters=None):
         clauses.append("email IS NOT NULL AND email != ''")
     if filters.get("only_new"):
         clauses.append("is_new = 1")
+    # Di default si mostrano SOLO i qualificati pre-seed; gli esclusi (con
+    # exclude_reason) compaiono solo col toggle "Show excluded" della dashboard.
+    if not filters.get("show_excluded"):
+        clauses.append("(qualified = 1 OR qualified IS NULL)")
 
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     sql = f"SELECT * FROM startups{where} ORDER BY is_new DESC, last_seen DESC, company_name COLLATE NOCASE"
@@ -305,6 +351,22 @@ def set_contact_status(key, status, db_path=DEFAULT_DB_PATH):
         )
         conn.commit()
         return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def get_existing_by_key(db_path=DEFAULT_DB_PATH):
+    """Ritorna {dedupe_key: dict(row)} delle startup gia' nel DB.
+
+    Usato dalla pipeline per: (a) idratare i record con i valori gia' trovati in
+    run precedenti (cosi' il CSV e la qualificazione restano completi anche per i
+    record che saltiamo) e (b) sapere quali sono gia' state arricchite dall'LLM
+    (enriched_at valorizzato) per NON rielaborarle."""
+    init_db(db_path)
+    conn = _connect(db_path)
+    try:
+        return {row["dedupe_key"]: dict(row)
+                for row in conn.execute("SELECT * FROM startups").fetchall()}
     finally:
         conn.close()
 

@@ -12,11 +12,15 @@ Tutto via requests (no browser): veloce, economico, nessuna API key.
 """
 
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse, urljoin
 
 import requests
+from bs4 import BeautifulSoup
 
 import config
+from dedupe import dedupe_key
 
 # Pagine candidate (oltre alla home) dove tipicamente vive un contatto.
 CANDIDATE_PATHS = ["/contact", "/contact-us", "/contacts", "/about", "/about-us", "/team"]
@@ -175,68 +179,124 @@ def _pick_best(candidates, site_host):
     return sorted(same, key=rank)[0]
 
 
-def find_email(website):
-    """Restituisce un'email di contatto VERIFICATA sul sito, o None.
+def _extract_text(html):
+    """Testo leggibile da una pagina HTML: niente script/style/nav rumorosi.
+    Serve a dare all'LLM il CONTENUTO reale del sito (come DATI) senza riversare
+    l'HTML grezzo — cosi' i token restano pochi e il modello non deve indovinare."""
+    if not html:
+        return ""
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript", "svg", "template"]):
+        tag.decompose()
+    text = soup.get_text(separator=" ")
+    # collassa spazi/newline multipli
+    return re.sub(r"\s+", " ", text).strip()
 
-    Verificata = effettivamente presente nell'HTML del sito e con un dominio che
-    combacia col dominio del sito. Non viene mai inventata o dedotta.
+
+def fetch_site(website, max_chars=None):
+    """Scarica UNA volta home + poche pagine contatti/about/team del sito reale e
+    ne ricava sia l'email verificata sia il testo pulito. Un solo fetch alimenta
+    sia il contatto sia l'enrichment LLM (niente doppio download del sito).
+
+    Ritorna: {"email": str|None, "text": str, "reachable": bool}
     """
+    if max_chars is None:
+        max_chars = config.LLM_MAX_SITE_CHARS
     site_host = _site_host(website)
     if not site_host:
-        return None
+        return {"email": None, "text": "", "reachable": False}
 
     base = website if "://" in website else f"https://{website}"
-    candidates = set()
-
-    # Alcuni siti rispondono solo su www. (o solo sull'apex): si prova prima la
-    # forma data, e se la home non scarica si tenta l'alternativa www/apex.
     parsed = urlparse(base)
     bases = [base]
     if parsed.netloc and not parsed.netloc.startswith("www."):
         bases.append(base.replace("://" + parsed.netloc, "://www." + parsed.netloc, 1))
 
     working_base = None
+    home_html = None
     for b in bases:
-        if _fetch(b) is not None:
-            working_base = b
+        html = _fetch(b)
+        if html is not None:
+            working_base, home_html = b, html
             break
     if working_base is None:
-        return None  # sito non raggiungibile: niente email inventata
+        return {"email": None, "text": "", "reachable": False}  # non raggiungibile
 
-    # Home prima, poi le pagine contatti comuni; ci si ferma appena si ha una
-    # buona candidata del dominio del sito (per restare veloci).
+    candidates = set()
+    texts = []
     for path in [""] + CANDIDATE_PATHS:
-        url = working_base if path == "" else urljoin(working_base, path)
-        html = _fetch(url)
+        html = home_html if path == "" else _fetch(urljoin(working_base, path))
         if not html:
             continue
         candidates |= _harvest(html)
-        best = _pick_best(candidates, site_host)
-        if best:
-            return best
+        texts.append(_extract_text(html))
+        # ci si ferma appena si ha SIA una buona email SIA abbastanza testo,
+        # per restare veloci senza scaricare tutte le pagine candidate.
+        if _pick_best(candidates, site_host) and sum(len(t) for t in texts) >= max_chars:
+            break
 
-    return _pick_best(candidates, site_host)
+    return {
+        "email": _pick_best(candidates, site_host),
+        "text": " ".join(texts)[:max_chars],
+        "reachable": True,
+    }
 
 
-def enrich_missing_emails_by_crawl(records):
-    """Riempie l'email mancante leggendo il sito reale di ogni record.
+def find_email(website):
+    """Restituisce un'email di contatto VERIFICATA sul sito, o None.
 
-    Stampa avanzamento i/N cosi' la dashboard puo' mostrare "Checking site X of N"
-    (i colleghi su Windows, senza terminale, capiscono che sta lavorando)."""
-    targets = [r for r in records if r.get("website") and not r.get("email")]
+    Verificata = effettivamente presente nell'HTML del sito e con un dominio che
+    combacia col dominio del sito. Non viene mai inventata o dedotta.
+    """
+    return fetch_site(website)["email"]
+
+
+def crawl_sites(records, skip_keys=None):
+    """Legge i siti reali (in PARALLELO) e per ogni record valorizza:
+      - l'email di contatto mancante (verificata sul sito, mai inventata);
+      - `_site_text`: il testo pulito del sito, usato poi da llm_enrich come DATI.
+
+    `skip_keys`: dedupe_key gia' arricchite in run precedenti (si saltano per non
+    riscaricare/rielaborare). Stampa avanzamento i/N cosi' la dashboard mostra
+    "Looking up ... X of N" (i colleghi su Windows capiscono che sta lavorando)."""
+    skip_keys = skip_keys or set()
+    # Si salta un sito solo se e' GIA' stato elaborato E ha gia' un'email: cosi'
+    # un record gia' arricchito ma ancora senza contatto viene comunque ritentato
+    # (il crawl e' economico), mentre non si rilegge chi e' gia' completo.
+    targets = [
+        r for r in records
+        if r.get("website") and not (dedupe_key(r) in skip_keys and r.get("email"))
+    ]
     if not targets:
-        print("[email] nessun sito da controllare (tutte le email gia' presenti o nessun sito).")
+        print("[email] nessun sito nuovo da controllare (gia' elaborati o nessun sito).")
         return records
 
-    print(f"[email] cerco email di contatto sui siti reali di {len(targets)} startup...")
-    found = 0
-    for i, record in enumerate(targets, 1):
-        email = find_email(record.get("website"))
-        if email:
-            record["email"] = email
-            found += 1
-        if i % 5 == 0 or i == len(targets):
-            print(f"[email]   {i}/{len(targets)} controllati, {found} email trovate.")
+    print(f"[email] leggo i siti reali di {len(targets)} startup (email + testo per l'analisi)...")
+    lock = threading.Lock()
+    state = {"done": 0, "emails": 0}
 
-    print(f"[email] trovate {found} email verificate sui siti (le altre restano vuote, non inventate).")
+    def work(record):
+        site = fetch_site(record.get("website"))
+        if site["text"]:
+            record["_site_text"] = site["text"]
+        if not record.get("email") and site["email"]:
+            record["email"] = site["email"]
+            return True
+        return False
+
+    with ThreadPoolExecutor(max_workers=config.ENRICH_WORKERS) as ex:
+        futures = [ex.submit(work, r) for r in targets]
+        for fut in as_completed(futures):
+            try:
+                got = fut.result()
+            except Exception:
+                got = False
+            with lock:
+                state["done"] += 1
+                if got:
+                    state["emails"] += 1
+                if state["done"] % 5 == 0 or state["done"] == len(targets):
+                    print(f"[email]   {state['done']}/{len(targets)} controllati, {state['emails']} email trovate.")
+
+    print(f"[email] trovate {state['emails']} email verificate sui siti (le altre restano vuote, non inventate).")
     return records

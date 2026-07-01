@@ -157,6 +157,7 @@ def api_startups():
         "source": request.args.get("source") or None,
         "has_email": request.args.get("has_email") == "1",
         "only_new": request.args.get("only_new") == "1",
+        "show_excluded": request.args.get("show_excluded") == "1",
     }
     rows = store.get_startups(DB_PATH, filters)
     return jsonify({
@@ -264,6 +265,13 @@ INDEX_HTML = """<!DOCTYPE html>
   .badge.UPDATED { background:#dbeafe; color:#1e40af; }
   .badge.contact { background:#fef3c7; color:#92400e; }
   .badge.change { background:#e0e7ff; color:#3730a3; }
+  .conf { display:inline-block; font-size:.7rem; font-weight:700; padding:2px 8px; border-radius:20px; text-transform:capitalize; }
+  .conf.high { background:#dcfce7; color:#166534; }
+  .conf.medium { background:#fef9c3; color:#854d0e; }
+  .conf.low { background:#f1f5f9; color:#64748b; }
+  .conf.excl { background:#fee2e2; color:#b91c1c; }
+  tr.is-excluded { background:#fcfafa; opacity:.72; }
+  .excl-reason { color:#b91c1c !important; font-size:.75rem; margin-top:2px; }
   .mail-btn { display:inline-block; padding:7px 14px; border-radius:8px; background:var(--ok); color:#fff; text-decoration:none; font-size:.82rem; font-weight:600; white-space:nowrap; }
   .mail-btn:hover { background:var(--ok-dark); }
   .mail-btn.disabled { background:#e2e6eb; color:#9aa3ad; pointer-events:none; font-weight:500; }
@@ -308,8 +316,8 @@ INDEX_HTML = """<!DOCTYPE html>
     <p>To find startups and their contact emails, the app uses an AI model to read each company's website. Paste an API key below (it's saved only on this computer, in a local .env file — never shared).</p>
     <label>Provider</label>
     <select id="setupProvider">
-      <option value="gemini">Gemini (Google) &mdash; recommended, free tier available</option>
-      <option value="anthropic">Claude (Anthropic)</option>
+      <option value="anthropic">Claude (Anthropic) &mdash; recommended</option>
+      <option value="gemini">Gemini (Google) &mdash; free tier available</option>
     </select>
     <label>API key</label>
     <input type="password" id="setupKey" placeholder="Paste your API key here">
@@ -360,6 +368,7 @@ INDEX_HTML = """<!DOCTYPE html>
     <select id="f_source" onchange="load()"><option value="">All sources</option></select>
     <label class="chk"><input type="checkbox" id="f_email" onchange="load()"> Has email</label>
     <label class="chk"><input type="checkbox" id="f_new" onchange="load()"> New this run</label>
+    <label class="chk" title="Show also companies excluded because they are past pre-seed or outside US/Canada/Europe"><input type="checkbox" id="f_excluded" onchange="load()"> Show excluded</label>
     <span class="count" id="count"></span>
   </div>
 
@@ -370,6 +379,7 @@ INDEX_HTML = """<!DOCTYPE html>
         <th onclick="sortBy('founder_name')">Founder</th>
         <th onclick="sortBy('sector')">Sector</th>
         <th onclick="sortBy('stage')">Stage</th>
+        <th onclick="sortBy('preseed_confidence')">Pre-seed</th>
         <th onclick="sortBy('country')">Country</th>
         <th onclick="sortBy('source')">Found on</th>
         <th>Contact</th>
@@ -449,6 +459,14 @@ function badgeHtml(badges){
   }).join('');
 }
 
+// Pillola di confidenza pre-seed (o "excluded" per chi non e' qualificato).
+function confHtml(s){
+  if(s.qualified === 0) return '<span class=\"conf excl\">excluded</span>';
+  const c = s.preseed_confidence || '';
+  if(!c) return '<span class=\"muted\">&mdash;</span>';
+  return `<span class=\"conf ${esc(c)}\">${esc(c)}</span>`;
+}
+
 // Una startup e' "pronta da contattare" se ha un'email e non e' ancora stata
 // contattata. E' il filtro protagonista per i colleghi.
 function isReady(s){ return !!s.email && s.contact_status === 'To contact'; }
@@ -477,11 +495,13 @@ function render(){
     const label = s.founder_name ? 'Contact founder' : 'Contact';
     const mail = href ? `<a class=\"mail-btn\" href=\"${href}\">${label}</a>` : `<span class=\"mail-btn disabled\">No email yet</span>`;
     const opts = ['To contact','Contacted','Replied'].map(o=>`<option ${o===s.contact_status?'selected':''}>${o}</option>`).join('');
-    return `<tr>
-      <td class=\"company\">${site}${badgeHtml(s.badges)}<div class=\"muted\">${esc(s.email||'')}</div></td>
+    const excluded = (s.qualified===0) ? `<div class=\"muted excl-reason\">Excluded: ${esc(s.exclude_reason||'')}</div>` : '';
+    return `<tr class=\"${s.qualified===0?'is-excluded':''}\">
+      <td class=\"company\">${site}${badgeHtml(s.badges)}<div class=\"muted\">${esc(s.email||'')}</div>${excluded}</td>
       <td>${founder}</td>
       <td>${esc(s.sector||'-')}</td>
-      <td>${esc(s.stage||'-')}</td>
+      <td title=\"${esc(s.stage_reason||'')}\">${esc(s.stage||'-')}</td>
+      <td>${confHtml(s)}</td>
       <td>${esc(s.country||'-')}</td>
       <td>${esc(sourceLabel(s.source))}</td>
       <td>${mail}</td>
@@ -522,6 +542,7 @@ async function load(){
     source: document.getElementById('f_source').value,
     has_email: document.getElementById('f_email').checked ? '1':'',
     only_new: document.getElementById('f_new').checked ? '1':'',
+    show_excluded: document.getElementById('f_excluded').checked ? '1':'',
   });
   const r = await fetch('/api/startups?'+q);
   const d = await r.json();
